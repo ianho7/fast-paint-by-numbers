@@ -109,7 +109,6 @@ interface DemoState {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const DEFAULT_SAMPLE = "../../../docs/paintbynumbersgenerator/src-cli/testinput.png";
 
 const state: DemoState = {
   wasmReady: false,
@@ -451,7 +450,10 @@ async function maybeRunSmokeMode(elements: DemoElements, logger: Logger): Promis
     return;
   }
 
-  const sample = params.get("sample") ?? DEFAULT_SAMPLE;
+  const sample = params.get("sample");
+  if (!sample) {
+    return;
+  }
   applyAutorunOverrides(elements, params);
 
   try {
