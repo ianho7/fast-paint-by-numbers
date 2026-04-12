@@ -1,35 +1,52 @@
-name: Deploy Demo
+name: Deploy Web To Pages
 
 on:
   push:
-    branches: [main] # 当代码推送到 main 分支时触发
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: Install Dependencies
-        run: |
-          npm install  # 安装根目录依赖
-          cd packages/web && npm install  # 确保子目录依赖也被安装
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-      - name: Build Demo
-        # 指定到子目录运行构建命令
-        run: npm run build --prefix packages/web
+      - name: Install dependencies
+        working-directory: packages/web
+        run: npm install
+
+      - name: Build web
+        working-directory: packages/web
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/web/dist
 
       - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: packages/web/dist # 构建产物所在的位置
-          branch: gh-pages # 部署到的目标分支
+        id: deployment
+        uses: actions/deploy-pages@v4
