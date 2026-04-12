@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build
+target/
+dist/
+out/
+pkg/
+*.wasm
+*.tsbuildinfo
+
+# ide and system
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# AI
+.agents/
+.claude/
+docs/
+
+# log and env
+*.log
+.env*
+
+# test
+test.jpeg

@@ -1,0 +1,30 @@
+[workspace]
+members = ["crates/pbn-core", "crates/pbn-cli"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+authors = ["OpenAI Codex"]
+repository = "https://example.invalid/fast-paint-by-numbers"
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.51", features = ["derive"] }
+console_error_panic_hook = "0.1.7"
+image = { version = "0.25.8", default-features = true, features = ["png", "jpeg", "webp"] }
+resvg = "0.45.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+tracing-wasm = "0.2.1"
+wasm-bindgen = "0.2.117"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"

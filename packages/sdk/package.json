@@ -1,0 +1,51 @@
+{
+  "name": "fast-paint-by-numbers",
+  "version": "0.1.0",
+  "description": "Fast Paint-By-Numbers generator using Rust Core and Wasm SDK",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "fast-pbn": "./bin/fast-pbn.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "generated",
+    "src"
+  ],
+  "author": "OpenAI Codex",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://example.invalid/fast-paint-by-numbers"
+  },
+  "keywords": [
+    "paint-by-numbers",
+    "wasm",
+    "rust",
+    "image-processing",
+    "svg"
+  ],
+  "scripts": {
+    "build": "bun node_modules/typescript/bin/tsc -p tsconfig.json",
+    "type-check": "bun node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "fs-extra": "^11.3.0",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^22.13.1",
+    "@types/fs-extra": "^11.0.4"
+  }
+}
