@@ -20,8 +20,9 @@ jobs:
           node-version: 24
 
       - name: Install Dependencies
-        # 如果你根目录有 lock 文件，就在根目录装
-        run: npm install 
+        run: |
+          npm install  # 安装根目录依赖
+          cd packages/web && npm install  # 确保子目录依赖也被安装
 
       - name: Build Demo
         # 指定到子目录运行构建命令
