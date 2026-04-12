@@ -1,7 +1,7 @@
 
 import {
   createConsoleLogger,
-  FacetSummary,
+  type FacetSummary,
 } from "fast-paint-by-numbers";
 import type {
   GenerateOptions,

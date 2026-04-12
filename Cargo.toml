@@ -6,8 +6,8 @@ resolver = "2"
 edition = "2024"
 license = "MIT"
 version = "0.1.0"
-authors = ["OpenAI Codex"]
-repository = "https://example.invalid/fast-paint-by-numbers"
+authors = ["Ian Ho"]
+repository = "https://github.com/ianho7/fast-paint-by-numbers"
 
 [workspace.dependencies]
 anyhow = "1.0.100"

@@ -1,5 +1,7 @@
 # Fast Paint By Numbers 🎨
 
+[English](./README.md)· [简体中文](./README-zh-CN-translation.md)
+
 **Fast Paint By Numbers** is a high-performance image vectorization and color reduction engine. It transforms standard photographs into beautiful, numbered paint-by-numbers patterns with clean vector borders and optimized color palettes.
 
 Built with **Rust** for the engine core and compiled to **WebAssembly**, it provides a consistent, high-speed experience across the Web, Node.js, and Native CLI environments.
@@ -66,36 +68,61 @@ fast-pbn \
 ## 🛠 SDK Usage
 
 ### Web (Browser)
+For optimal performance and to keep the UI responsive, it is highly recommended to run the engine in a **Web Worker**.
+
+**1. Create your worker file (`worker.ts`):**
 ```typescript
 import { initializeWasmRuntime, generatePaintByNumbers, prepareRgbaFromImageSource } from 'fast-paint-by-numbers';
 
+// The worker listens for image data, processes it, and sends back the result.
+self.onmessage = async (e) => {
+  const { file } = e.data;
+  await initializeWasmRuntime();
+  const input = await prepareRgbaFromImageSource(file);
+  const result = await generatePaintByNumbers(input);
+  self.postMessage(result);
+};
+```
+
+**2. Call from your Main Thread:**
+```typescript
 async function processImage(file: File) {
-  // Use a Web Worker for heavy processing (recommended)
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-  worker.postMessage({ type: 'generate', file });
+  worker.postMessage({ file });
   worker.onmessage = (e) => console.log('Result:', e.data);
 }
 ```
 
 > [!TIP]
-> **Avoid Blocking**: For Web apps, it's highly recommended to run the generator in a **Web Worker**. See [packages/web-demo/src/worker.ts](./packages/web-demo/src/worker.ts) for a production-ready implementation.
+> **Why a separate file?** Web Workers must be initialized from a physical file path. The code above assumes you have a `worker.ts` in your source directory which imports the SDK.
 
-### Node.js
+### Node.js (Backend)
+In a typical backend scenario (e.g., Express or serverless functions), you can process uploaded images directly using `sharp` to decode pixels.
+
 ```typescript
 import { initializeWasmRuntime, generatePaintByNumbers, prepareRgbaInput } from 'fast-paint-by-numbers';
-import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import sharp from 'sharp';
+import fs from 'node:fs/promises';
 
-if (isMainThread) {
-  const worker = new Worker(import.meta.url, { workerData: { path: 'image.jpg' } });
-  worker.on('message', (res) => console.log('Done:', res.facetCount));
-} else {
-  // Inside Worker Thread
-  const { path } = workerData;
+async function handleImageUpload(inputPath: string, outputPath: string) {
+  // 1. Initialize Wasm runtime (perform once)
   await initializeWasmRuntime();
-  const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const result = await generatePaintByNumbers(prepareRgbaInput(info.width, info.height, data));
-  parentPort?.postMessage(result);
+
+  // 2. Decode the image to raw RGBA bytes using sharp
+  const { data, info } = await sharp(inputPath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  // 3. Generate the paint-by-numbers pattern
+  const result = await generatePaintByNumbers(
+    prepareRgbaInput(info.width, info.height, data),
+    { kmeansClusters: 24 }
+  );
+
+  // 4. Save the result (SVG or metadata) to disk
+  await fs.writeFile(outputPath, result.svg);
+  console.log(`Success! Points processed: ${result.facetCount}`);
 }
 ```
 
@@ -155,7 +182,3 @@ bun run serve:web
 ## 📜 License
 
 Distributed under the **MIT License**. See `LICENSE` for more information.
-
----
-
-*For detailed migration history and technical status, see [docs/MIGRATION-LOG.md](./docs/MIGRATION-LOG.md).*

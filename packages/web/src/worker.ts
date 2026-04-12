@@ -2,13 +2,13 @@ import {
   createConsoleLogger,
   generatePaintByNumbers,
   initializeWasmRuntime,
-} from "../../sdk/dist/index.js";
+} from "fast-paint-by-numbers";
 import type {
   GenerateOptions,
   LogLevel,
   ProcessOutput,
   RgbaInput,
-} from "../../sdk/dist/index.js";
+} from "fast-paint-by-numbers";
 
 type WorkerRequest =
   | { id: number; type: "init" }

@@ -1,6 +1,6 @@
 {
   "name": "fast-paint-by-numbers",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fast Paint-By-Numbers generator using Rust Core and Wasm SDK",
   "private": false,
   "type": "module",
@@ -20,11 +20,11 @@
     "generated",
     "src"
   ],
-  "author": "OpenAI Codex",
+  "author": "Ian Ho",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://example.invalid/fast-paint-by-numbers"
+    "url": "https://github.com/ianho7/fast-paint-by-numbers/tree/main/packages/sdk"
   },
   "keywords": [
     "paint-by-numbers",

@@ -1,5 +1,7 @@
 # 数字绘画速成 🎨
 
+[English](./README.md) · [简体中文](./README-zh-CN-translation.md)
+
 Fast Paint By Numbers 是一款高性能的图像矢量化和颜色简化工具。它能将普通照片转化为精美的填色图，具有清晰的矢量边框和优化的颜色方案。
 
 该引擎的核心部分使用 Rust 编写，并编译为 WebAssembly 格式。因此，无论是在 Web 环境、Node.js 环境还是原生 CLI 环境中，都能提供一致且高速的体验。
@@ -61,7 +63,7 @@ fast-pbn \
 *   `--remove-facets-smaller-than <px>` ：过滤掉小的噪声区域（默认值：20）。
 *   `--border-smoothing-passes <num>` ：矢量路径的平滑度（默认值：2）。
 *   `--format <list>` ：输出格式（svg、palette.json、quantized.png、png、jpg）。
-*   `--log-level <level>` ：日志详细程度（info, debug, warn, error）。
+*   `--log-level <level>` ：日志详细程度（信息、调试、警告、错误）。
 
 * * *
 
@@ -69,36 +71,63 @@ fast-pbn \
 
 ### Web（浏览器）
 
+为获得最佳性能并保持用户界面的响应速度，强烈建议在 Web Worker 中运行该引擎。
+
+**1\. 创建你的 worker 文件（ `worker.ts` ）：**
+
 ```typescript
 import { initializeWasmRuntime, generatePaintByNumbers, prepareRgbaFromImageSource } from 'fast-paint-by-numbers';
 
+// The worker listens for image data, processes it, and sends back the result.
+self.onmessage = async (e) => {
+  const { file } = e.data;
+  await initializeWasmRuntime();
+  const input = await prepareRgbaFromImageSource(file);
+  const result = await generatePaintByNumbers(input);
+  self.postMessage(result);
+};
+```
+
+**2\. 从主线程调用：**
+
+```typescript
 async function processImage(file: File) {
-  // Use a Web Worker for heavy processing (recommended)
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-  worker.postMessage({ type: 'generate', file });
+  worker.postMessage({ file });
   worker.onmessage = (e) => console.log('Result:', e.data);
 }
 ```
 
-> \[!TIP\] 避免阻塞：对于 Web 应用，强烈建议在 Web Worker 中运行该生成器。有关可用于生产环境的实现方式，请参阅 packages/web-demo/src/worker.ts。
+> \[!TIP\] 为什么要单独创建文件？Web Workers 必须从具体的文件路径进行初始化。上述代码假定你的源代码目录中有一个用于导入 SDK 的 `worker.ts` 文件。
 
-### Node.js
+### Node.js（后端）
+
+在典型的后端场景中（例如使用 Express 或无服务器函数），你可以直接利用 `sharp` 来解码像素，从而处理上传的图片。
 
 ```typescript
 import { initializeWasmRuntime, generatePaintByNumbers, prepareRgbaInput } from 'fast-paint-by-numbers';
-import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import sharp from 'sharp';
+import fs from 'node:fs/promises';
 
-if (isMainThread) {
-  const worker = new Worker(import.meta.url, { workerData: { path: 'image.jpg' } });
-  worker.on('message', (res) => console.log('Done:', res.facetCount));
-} else {
-  // Inside Worker Thread
-  const { path } = workerData;
+async function handleImageUpload(inputPath: string, outputPath: string) {
+  // 1. Initialize Wasm runtime (perform once)
   await initializeWasmRuntime();
-  const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const result = await generatePaintByNumbers(prepareRgbaInput(info.width, info.height, data));
-  parentPort?.postMessage(result);
+
+  // 2. Decode the image to raw RGBA bytes using sharp
+  const { data, info } = await sharp(inputPath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  // 3. Generate the paint-by-numbers pattern
+  const result = await generatePaintByNumbers(
+    prepareRgbaInput(info.width, info.height, data),
+    { kmeansClusters: 24 }
+  );
+
+  // 4. Save the result (SVG or metadata) to disk
+  await fs.writeFile(outputPath, result.svg);
+  console.log(`Success! Points processed: ${result.facetCount}`);
 }
 ```
 
@@ -117,7 +146,7 @@ bun run build
 
 * * *
 
-## 📦 包装与配送
+## 📦 打包与分发
 
 ### 1\. NPM 包(.tgz)
 
@@ -145,7 +174,7 @@ cargo build --release -p pbn-cli
 
 * * *
 
-## 🔬 开发中
+## 🔬 开发
 
 ```bash
 # Check Rust core
@@ -163,7 +192,3 @@ bun run serve:web
 ## 📜 许可证
 
 根据 MIT 许可证发布。更多信息请参见 `LICENSE` 。
-
-* * *
-
-*有关详细的迁移历史和技术状态，请参阅 docs/MIGRATION-LOG.md。*

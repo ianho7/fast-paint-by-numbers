@@ -32,9 +32,12 @@ export function prepareRgbaInput(
 export async function prepareRgbaFromImageSource(
   source: Blob | TexImageSource | ImageBitmap
 ): Promise<RgbaInput> {
-  if (typeof globalThis.createImageBitmap !== "function" || typeof globalThis.document === "undefined") {
+  const hasDocument = typeof globalThis.document !== "undefined";
+  const hasOffscreenCanvas = typeof globalThis.OffscreenCanvas !== "undefined";
+
+  if (typeof globalThis.createImageBitmap !== "function" || (!hasDocument && !hasOffscreenCanvas)) {
     throw new Error(
-      "prepareRgbaFromImageSource 仅支持在具备 ImageBitmap 和 DOM 环境中运行（通常为浏览器）。\n" +
+      "prepareRgbaFromImageSource 仅支持在具备 ImageBitmap 和 (DOM 或 OffscreenCanvas) 环境中运行（通常为浏览器）。\n" +
       "在 Node.js 环境中，请先使用 sharp 等库解出像素，再调用 prepareRgbaInput。"
     );
   }
@@ -44,11 +47,17 @@ export async function prepareRgbaFromImageSource(
     : await createImageBitmap(source as Blob | TexImageSource);
 
   try {
-    const canvas = globalThis.document.createElement("canvas");
+    let canvas: HTMLCanvasElement | OffscreenCanvas;
+    if (hasDocument) {
+      canvas = globalThis.document.createElement("canvas");
+    } else {
+      canvas = new globalThis.OffscreenCanvas(imageBitmap.width, imageBitmap.height);
+    }
+
     canvas.width = imageBitmap.width;
     canvas.height = imageBitmap.height;
 
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!ctx) {
       throw new Error("无法获取 Canvas 2D 上下文");
     }
