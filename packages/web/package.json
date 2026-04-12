@@ -16,6 +16,6 @@
     "node": "24.14.1"
   },
   "dependencies": {
-    "fast-paint-by-numbers": "^0.1.1"
+    "fast-paint-by-numbers": "file:../sdk"
   }
 }

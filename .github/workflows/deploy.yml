@@ -34,7 +34,14 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Install dependencies
+      - name: Install SDK dependencies
+        working-directory: packages/sdk
+        run: npm install
+
+      - name: Build SDK
+        run: npx tsc -p packages/sdk/tsconfig.json
+
+      - name: Install web dependencies
         working-directory: packages/web
         run: npm install
 
