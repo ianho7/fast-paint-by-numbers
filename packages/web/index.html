@@ -11,7 +11,7 @@
       --page-bg: #ffffff;
       --panel: #ffffff;
       --ink: #1d1d1f;
-      --muted: #86868b;
+      --muted: rgba(0, 0, 0, 0.8);
       --accent: #0071e3;
       --accent-hover: #0077ed;
       --accent-active: #0062c3;
@@ -19,7 +19,7 @@
       --line: rgba(0, 0, 0, 0.1);
       --input-bg: #ffffff;
       --input-border: #d2d2d7;
-      --shadow: rgba(0, 0, 0, 0.1) 0px 4px 20px 0px;
+      --shadow: rgba(0, 0, 0, 0.22) 3px 5px 30px 0px;
       --focus-ring: 0 0 0 4px rgba(0, 113, 227, 0.3);
     }
 
@@ -63,6 +63,22 @@
       margin-bottom: 20px;
     }
 
+    .header-top {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 16px;
+    }
+
+    .locale-switcher {
+      display: inline-flex;
+      gap: 8px;
+    }
+
+    .locale-button.is-active {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
     .controls {
       position: sticky;
       top: 20px;
@@ -85,20 +101,19 @@
 
     .panel {
       background: var(--panel);
-      border-radius: 18px;
+      border-radius: 12px;
       padding: 32px;
-      box-shadow: none;
-      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
       min-width: 0;
     }
 
     /* Typography */
     h1 {
       margin: 0 0 12px;
-      font-size: 48px;
+      font-size: 56px;
       font-weight: 600;
-      letter-spacing: -0.003em;
-      line-height: 1.08;
+      letter-spacing: -0.005em;
+      line-height: 1.07;
       text-align: center;
     }
 
@@ -126,7 +141,7 @@
       display: flex;
       justify-content: center;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 16px;
       margin-bottom: 40px;
     }
 
@@ -199,7 +214,7 @@
     .field-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
+      gap: 16px;
     }
 
     .field-grid.three {
@@ -224,12 +239,13 @@
 
     .radio-row {
       display: flex;
-      flex-wrap: wrap;
+      /* flex-wrap: wrap; */
       gap: 10px;
       margin-top: 4px;
     }
 
     .radio-option {
+      flex: 1;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -274,12 +290,12 @@
 
     button.primary-button {
       border: 0;
-      border-radius: 980px;
-      padding: 14px 28px;
+      border-radius: 8px;
+      padding: 8px 15px;
       background: var(--accent);
       color: white;
       font-size: 17px;
-      font-weight: 500;
+      font-weight: 400;
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
       align-self: center;
@@ -329,8 +345,9 @@
 
     .stage-tabs {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
-      overflow-x: auto;
+      /* overflow-x: auto; */
       padding-bottom: 4px;
     }
 
@@ -369,10 +386,10 @@
       display: grid;
       place-items: center;
       background: #ffffff;
-      border-radius: 20px;
-      box-shadow: var(--shadow);
+      border-radius: 12px;
+      /* box-shadow: var(--shadow);s */
       overflow: auto;
-      padding: 24px;
+      /* padding: 24px; */
       border: 1px solid rgba(0, 0, 0, 0.05);
     }
 
@@ -410,10 +427,10 @@
       display: grid;
       place-items: center;
       background: #ffffff;
-      border-radius: 20px;
-      box-shadow: var(--shadow);
+      border-radius: 12px;
+      /* box-shadow: var(--shadow); */
       overflow: auto;
-      padding: 40px;
+      /* padding: 40px; */
       border: 1px solid rgba(0, 0, 0, 0.05);
     }
 
@@ -497,7 +514,7 @@
       }
 
       h1 {
-        font-size: 34px;
+        font-size: 40px;
       }
 
       .lead {
@@ -534,11 +551,11 @@
 
       .panel {
         padding: 20px;
-        border-radius: 16px;
+        border-radius: 12px;
       }
 
       h1 {
-        font-size: 28px;
+        font-size: 32px;
       }
 
       h2 {
@@ -592,7 +609,7 @@
       .stage-canvas-shell,
       #svg-preview {
         padding: 16px;
-        border-radius: 16px;
+        border-radius: 12px;
       }
 
       .palette-list {
@@ -656,48 +673,58 @@
 <body>
   <main>
     <header class="page-header">
-      <h1>Fast Paint By Numbers</h1>
+      <div class="header-top">
+        <div class="locale-switcher" aria-label="Language switcher">
+          <button id="locale-en-button" class="ghost-button locale-button" type="button" data-locale="en">EN</button>
+          <button id="locale-zh-button" class="ghost-button locale-button" type="button" data-locale="zh-CN">中文</button>
+        </div>
+      </div>
+      <h1 data-i18n="page.heading">Fast Paint By Numbers</h1>
     </header>
 
     <section class="panel controls">
       <form id="demo-form">
         <div class="form-group">
-          <h2 class="group-title">Input Image</h2>
-          <p class="group-help">Upload local image, or use the example image above to quickly verify the current
-            configuration.</p>
+          <h2 class="group-title" data-i18n="form.input.title">Input Image</h2>
+          <p class="group-help" data-i18n="form.input.help">Upload a local image to start processing.</p>
           <label>
-            Input Image
+            <span data-i18n="form.input.label">Input Image</span>
             <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp" />
           </label>
         </div>
 
         <div class="form-group">
-          <h2 class="group-title">Resize</h2>
-          <p class="group-help">Scale down images exceeding limits while maintaining aspect ratio.</p>
+          <h2 class="group-title" data-i18n="form.resize.title">Resize</h2>
+          <p class="group-help" data-i18n="form.resize.help">Scale down images exceeding limits while maintaining aspect
+            ratio.</p>
           <label class="check-label">
             <input id="resize-enabled-input" type="checkbox" checked />
-            <span>Resize image larger than</span>
+            <span data-i18n="form.resize.enabled">Resize image larger than</span>
           </label>
           <div class="field-grid">
-            <label>Max Width<input id="resize-width-input" type="number" min="1" value="1024" /></label>
-            <label>Max Height<input id="resize-height-input" type="number" min="1" value="1024" /></label>
+            <label><span data-i18n="form.resize.width">Max Width</span><input id="resize-width-input" type="number"
+                min="1" value="1024" /></label>
+            <label><span data-i18n="form.resize.height">Max Height</span><input id="resize-height-input" type="number"
+                min="1" value="1024" /></label>
           </div>
         </div>
 
         <div class="form-group">
-          <h2 class="group-title">K-Means</h2>
+          <h2 class="group-title" data-i18n="form.kmeans.title">K-Means</h2>
           <div class="field-grid three">
-            <label>Number of colors<input id="clusters-input" type="number" min="1" max="64" value="16" /></label>
-            <label>Cluster precision<input id="cluster-precision-input" type="number" min="0.05" step="0.05"
-                value="1" /></label>
-            <label>Random seed<input id="random-seed-input" type="number" min="0" step="1" value="0" /></label>
+            <label><span data-i18n="form.kmeans.colors">Number of colors</span><input id="clusters-input" type="number"
+                min="1" max="64" value="16" /></label>
+            <label><span data-i18n="form.kmeans.precision">Cluster precision</span><input id="cluster-precision-input"
+                type="number" min="0.05" step="0.05" value="1" /></label>
+            <label><span data-i18n="form.kmeans.seed">Random seed</span><input id="random-seed-input" type="number"
+                min="0" step="1" value="0" /></label>
           </div>
         </div>
 
-        <div class="form-group">
-          <h2 class="group-title">Color Space</h2>
-          <!-- <p class="group-help">当前可选择 RGB / HSL / Lab，并将配置真实透传给 SDK。</p> -->
-          <!-- <p class="state-note">状态说明：当前 Rust core 完整支持 RGB，HSL/Lab 目前会记录告警并回退到 RGB。</p> -->
+        <!-- <div class="form-group">
+          <h2 class="group-title" data-i18n="form.colorSpace.title">Color Space</h2>
+          <p class="group-help">当前可选择 RGB / HSL / Lab，并将配置真实透传给 SDK。</p>
+          <p class="state-note">状态说明：当前 Rust core 完整支持 RGB，HSL/Lab 目前会记录告警并回退到 RGB。</p>
           <div class="radio-row">
             <label class="radio-option"><input type="radio" name="kmeans-color-space" value="rgb" checked />
               <span>RGB</span></label>
@@ -706,81 +733,87 @@
             <label class="radio-option"><input type="radio" name="kmeans-color-space" value="lab" disabled />
               <span>Lab</span></label>
           </div>
-        </div>
+        </div> -->
 
         <div class="form-group">
-          <h2 class="group-title">Color Restrictions</h2>
-          <p class="group-help">Specify which colors should be used, one per line in 'r,g,b' format. Use // as comment.
-            If no colors are specified no restrictions are applied. Useful if you only have a few colors of paint on
-            hand.</p>
+          <h2 class="group-title" data-i18n="form.colorRestrictions.title">Color Restrictions</h2>
+          <p class="group-help" data-i18n="form.colorRestrictions.help">Specify which colors should be used, one per
+            line in 'r,g,b' format. Use // as comment. If no colors are specified no restrictions are applied.</p>
           <label>
-            Restrict clustering colors
+            <span data-i18n="form.colorRestrictions.label">Restrict clustering colors</span>
             <textarea id="color-restrictions-input">//0,0,0
 //255,255,255</textarea>
           </label>
         </div>
 
         <div class="form-group">
-          <h2 class="group-title">Facet Reduction</h2>
+          <h2 class="group-title" data-i18n="form.facetReduction.title">Facet Reduction</h2>
           <!-- <p class="group-help">对齐窄像素清理、小面片删除、最大 facet 数量和删除顺序。</p> -->
-          <label>Narrow pixel cleanup runs<input id="cleanup-runs-input" type="number" min="0" value="3" /></label>
-          <label>Remove small facets smaller than<input id="remove-facets-input" type="number" min="1"
-              value="20" /></label>
-          <label>Maximum number of facets<input id="maximum-facets-input" type="number" min="1"
-              value="100000" /></label>
+          <label><span data-i18n="form.facetReduction.cleanupRuns">Narrow pixel cleanup runs</span><input
+              id="cleanup-runs-input" type="number" min="0" value="3" /></label>
+          <label><span data-i18n="form.facetReduction.removeSmallerThan">Remove small facets smaller than</span><input
+              id="remove-facets-input" type="number" min="1" value="20" /></label>
+          <label><span data-i18n="form.facetReduction.maximum">Maximum number of facets</span><input
+              id="maximum-facets-input" type="number" min="1" value="100000" /></label>
           <div>
-            <label>Small facet removal order</label>
+            <label data-i18n="form.facetReduction.order">Small facet removal order</label>
             <div class="radio-row">
               <label class="radio-option"><input type="radio" name="facet-removal-order" value="large_to_small"
-                  checked /> <span>Largest to smallest</span></label>
+                  checked /> <span data-i18n="form.facetReduction.order.largeToSmall">Largest to smallest</span></label>
               <label class="radio-option"><input type="radio" name="facet-removal-order" value="small_to_large" />
-                <span>Smallest to largest</span></label>
+                <span data-i18n="form.facetReduction.order.smallToLarge">Smallest to largest</span></label>
             </div>
           </div>
         </div>
 
         <div class="form-group">
-          <h2 class="group-title">Border</h2>
+          <h2 class="group-title" data-i18n="form.border.title">Border</h2>
           <!-- <p class="group-help">对齐旧版 border segment halving 语义，映射到当前 border smoothing passes。</p> -->
-          <label>Amount of times to halve border segment complexity<input id="smoothing-input" type="number" min="0"
-              max="8" value="2" /></label>
+          <label><span data-i18n="form.border.smoothing">Amount of times to halve border segment complexity</span><input
+              id="smoothing-input" type="number" min="0" max="8" value="2" /></label>
         </div>
 
         <div class="form-group">
-          <h2 class="group-title">Output</h2>
-          <p class="group-help">Applies to browser preview only.</p>
+          <h2 class="group-title" data-i18n="form.output.title">Output</h2>
+          <p class="group-help" data-i18n="form.output.help">Applies to browser preview only.</p>
           <div class="field-grid three">
-            <label>Size multiplier<input id="size-multiplier-input" type="number" min="1" step="1" value="3" /></label>
-            <label>Label font size<input id="label-font-size-input" type="number" min="1" step="1" value="50" /></label>
-            <label>Label font color<input id="label-font-color-input" type="color" value="#333333" /></label>
+            <label><span data-i18n="form.output.sizeMultiplier">Size multiplier</span><input id="size-multiplier-input"
+                type="number" min="1" step="1" value="3" /></label>
+            <label><span data-i18n="form.output.labelFontSize">Label font size</span><input id="label-font-size-input"
+                type="number" min="1" step="1" value="50" /></label>
+            <label><span data-i18n="form.output.labelFontColor">Label font color</span><input
+                id="label-font-color-input" type="color" value="#333333" /></label>
           </div>
           <div class="radio-row">
-            <label class="check-label radio-option"><input id="show-labels-input" type="checkbox" checked /> <span>Show
-                labels</span></label>
-            <label class="check-label radio-option"><input id="fill-facets-input" type="checkbox" checked /> <span>Fill
-                facets</span></label>
-            <label class="check-label radio-option"><input id="show-borders-input" type="checkbox" checked /> <span>Show
-                borders</span></label>
+            <label class="check-label radio-option"><input id="show-labels-input" type="checkbox" checked /> <span
+                data-i18n="form.output.showLabels">Show labels</span></label>
+            <label class="check-label radio-option"><input id="fill-facets-input" type="checkbox" checked /> <span
+                data-i18n="form.output.fillFacets">Fill facets</span></label>
+            <label class="check-label radio-option"><input id="show-borders-input" type="checkbox" checked /> <span
+                data-i18n="form.output.showBorders">Show borders</span></label>
           </div>
           <!-- <p class="state-note">状态说明：这些项当前只改写浏览器中的 SVG 预览，不改变 Rust core 输出结果，也不影响 CLI。</p> -->
         </div>
 
-        <button id="generate-button" class="primary-button" type="submit">Generate</button>
+        <button id="generate-button" class="primary-button" type="submit" data-i18n="action.generate">Generate</button>
       </form>
 
-      <div id="status" data-state="normal">Initializing...</div>
+      <div id="status" data-state="normal" data-i18n="status.initializing">Initializing Wasm worker...</div>
     </section>
 
     <section class="workspace">
       <article class="panel preview">
         <div class="preview-header">
-          <h2>Preview</h2>
+          <h2 data-i18n="preview.title">Preview</h2>
           <div class="preview-actions">
-            <button id="download-svg-button" class="ghost-button" type="button" disabled>Download SVG</button>
-            <button id="download-png-button" class="ghost-button" type="button" disabled>Download PNG</button>
+            <button id="download-svg-button" class="ghost-button" type="button" disabled
+              data-i18n="action.downloadSvg">Download SVG</button>
+            <button id="download-png-button" class="ghost-button" type="button" disabled
+              data-i18n="action.downloadPng">Download PNG</button>
           </div>
         </div>
-        <div id="stage-tabs" class="stage-tabs" role="tablist" aria-label="Processing stages">
+        <div id="stage-tabs" class="stage-tabs" role="tablist" aria-label="Processing stages"
+          data-i18n-aria-label="preview.stageTabsLabel">
           <button class="stage-tab" type="button" role="tab" aria-selected="false" aria-controls="quantized-panel"
             data-stage-tab="quantized">Quantized image</button>
           <button class="stage-tab" type="button" role="tab" aria-selected="false" aria-controls="reduction-panel"
@@ -798,31 +831,36 @@
         <section id="quantized-panel" class="stage-panel" role="tabpanel" aria-labelledby="quantized-tab">
           <div class="stage-canvas-shell">
             <canvas id="quantized-canvas" class="stage-canvas"></canvas>
-            <div id="quantized-empty" class="stage-empty">Waiting for input image</div>
+            <div id="quantized-empty" class="stage-empty" data-i18n="empty.waitingForInput">Waiting for input image
+            </div>
           </div>
         </section>
         <section id="reduction-panel" class="stage-panel" role="tabpanel">
           <div class="stage-canvas-shell">
             <canvas id="reduction-canvas" class="stage-canvas"></canvas>
-            <div id="reduction-empty" class="stage-empty">Waiting for input image</div>
+            <div id="reduction-empty" class="stage-empty" data-i18n="empty.waitingForInput">Waiting for input image
+            </div>
           </div>
         </section>
         <section id="border-path-panel" class="stage-panel" role="tabpanel">
           <div class="stage-canvas-shell">
             <canvas id="border-path-canvas" class="stage-canvas"></canvas>
-            <div id="border-path-empty" class="stage-empty">Waiting for input image</div>
+            <div id="border-path-empty" class="stage-empty" data-i18n="empty.waitingForInput">Waiting for input image
+            </div>
           </div>
         </section>
         <section id="border-segmentation-panel" class="stage-panel" role="tabpanel">
           <div class="stage-canvas-shell">
             <canvas id="border-segmentation-canvas" class="stage-canvas"></canvas>
-            <div id="border-segmentation-empty" class="stage-empty">Waiting for input image</div>
+            <div id="border-segmentation-empty" class="stage-empty" data-i18n="empty.waitingForInput">Waiting for input
+              image</div>
           </div>
         </section>
         <section id="label-placement-panel" class="stage-panel" role="tabpanel">
           <div class="stage-canvas-shell">
             <canvas id="label-placement-canvas" class="stage-canvas"></canvas>
-            <div id="label-placement-empty" class="stage-empty">Waiting for input image</div>
+            <div id="label-placement-empty" class="stage-empty" data-i18n="empty.waitingForInput">Waiting for input
+              image</div>
           </div>
         </section>
         <section id="output-panel" class="stage-panel is-active" role="tabpanel">
@@ -832,18 +870,18 @@
 
       <section class="meta">
         <article class="panel meta-panel">
-          <h2>Summary</h2>
+          <h2 data-i18n="summary.title">Summary</h2>
           <ul id="summary"></ul>
         </article>
 
         <article class="panel meta-panel">
-          <h2>Palette</h2>
+          <h2 data-i18n="palette.title">Palette</h2>
           <ul id="palette" class="palette-list"></ul>
         </article>
       </section>
 
       <article class="panel meta-panel log-panel">
-        <h2>Logs</h2>
+        <h2 data-i18n="logs.title">Logs</h2>
         <textarea id="logs" readonly></textarea>
       </article>
     </section>

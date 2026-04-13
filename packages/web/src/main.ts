@@ -12,6 +12,14 @@ import type {
   ProcessOutput,
   RgbaInput,
 } from "fast-paint-by-numbers";
+import {
+  applyStaticTranslations,
+  getLocale,
+  setLocale,
+  t,
+  type I18nKey,
+  type Locale,
+} from "./i18n";
 
 interface DemoElements {
   form: HTMLFormElement;
@@ -54,6 +62,7 @@ interface DemoElements {
   palette: HTMLElement;
   logs: HTMLTextAreaElement;
   exampleButtons: HTMLButtonElement[];
+  localeButtons: HTMLButtonElement[];
 }
 
 type StageKey = "quantized" | "reduction" | "borderPath" | "borderSegmentation" | "labelPlacement" | "output";
@@ -106,6 +115,8 @@ interface DemoState {
   stageImages: StageRgbaMap;
   renderedStages: Partial<Record<Exclude<StageKey, "output">, boolean>>;
   currentStage: StageKey;
+  currentProgressStage: WorkerProgressStage | null;
+  statusMessage: { key: I18nKey; params?: Record<string, string | number>; isError: boolean } | null;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -126,6 +137,8 @@ const state: DemoState = {
   stageImages: {},
   renderedStages: {},
   currentStage: "output",
+  currentProgressStage: null,
+  statusMessage: null,
 };
 
 type WorkerRequest =
@@ -139,15 +152,47 @@ type WorkerResponse =
   | { id: number; type: "progress"; stage: WorkerProgressStage; label: string }
   | { id: number; type: "log"; level: LogLevel; message: string; context?: Record<string, unknown> };
 
+const STAGE_TIMING_LABELS: Record<string, I18nKey> = {
+  quantizeMs: "summary.pipeline.quantize",
+  cleanupMs: "summary.pipeline.cleanup",
+  regionsMs: "summary.pipeline.regions",
+  reductionMs: "summary.pipeline.reduction",
+  labelsMs: "summary.pipeline.labels",
+  renderMs: "summary.pipeline.render",
+  totalMs: "summary.pipeline.total",
+};
+
+const PIPELINE_STAT_LABELS: Record<string, I18nKey> = {
+  originalUniqueColors: "summary.stat.originalUniqueColors",
+  quantizedPaletteSize: "summary.stat.quantizedPaletteSize",
+  quantizeIterations: "summary.stat.quantizeIterations",
+  quantizeSampleColors: "summary.stat.quantizeSampleColors",
+  facetsBeforeReduction: "summary.stat.facetsBeforeReduction",
+  facetsAfterReduction: "summary.stat.facetsAfterReduction",
+  removedFacets: "summary.stat.removedFacets",
+  reductionRounds: "summary.stat.reductionRounds",
+  maxFacetsSeenDuringReduction: "summary.stat.maxFacetsSeenDuringReduction",
+  reductionFastPathFacets: "summary.stat.reductionFastPathFacets",
+  reductionBfsFacets: "summary.stat.reductionBfsFacets",
+  narrowCleanupReplacedPixels: "summary.stat.narrowCleanupReplacedPixels",
+  contourTracedPathPoints: "summary.stat.contourTracedPathPoints",
+  contourRawSegments: "summary.stat.contourRawSegments",
+  contourSharedSegments: "summary.stat.contourSharedSegments",
+  contourReverseSegments: "summary.stat.contourReverseSegments",
+};
+
 export async function bootstrapWebDemo(root: ParentNode = document): Promise<void> {
   const elements = queryElements(root);
+  applyStaticTranslations(root);
   const logger = createUiLogger(elements.logs, "info");
 
+  bindLocaleSwitcher(elements);
   bindForm(elements, logger);
   bindExamples(elements, logger);
   bindStageTabs(elements);
   bindRenderProfilePreview(elements, logger);
   bindDownloads(elements, logger);
+  refreshLocalizedUi(elements);
   selectStage(elements, "output");
   syncBusyState(elements, false);
   await ensureWasmReady(elements, logger);
@@ -196,18 +241,65 @@ function queryElements(root: ParentNode): DemoElements {
     palette: requireElement(root, "#palette", HTMLElement),
     logs: requireElement(root, "#logs", HTMLTextAreaElement),
     exampleButtons: Array.from(root.querySelectorAll<HTMLButtonElement>(".example-button")),
+    localeButtons: Array.from(root.querySelectorAll<HTMLButtonElement>("[data-locale]")),
   };
 }
 
+function bindLocaleSwitcher(elements: DemoElements): void {
+  for (const button of elements.localeButtons) {
+    button.addEventListener("click", () => {
+      const locale = button.dataset.locale as Locale | undefined;
+      if (!locale || locale === getLocale()) {
+        return;
+      }
+      setLocale(locale);
+      refreshLocalizedUi(elements);
+    });
+  }
+}
+
+function refreshLocalizedUi(elements: DemoElements): void {
+  applyStaticTranslations(document);
+  syncLocaleButtons(elements);
+  syncBusyState(elements, state.busy);
+  refreshStageTabs(elements);
+
+  if (state.statusMessage) {
+    if (state.statusMessage.key === "status.processingStage" && state.currentProgressStage) {
+      state.statusMessage.params = { label: getProgressStageLabel(state.currentProgressStage) };
+    }
+    renderStatusText(elements, t(state.statusMessage.key, state.statusMessage.params), state.statusMessage.isError);
+  }
+
+  if (state.lastResult && state.lastOptions && state.lastRenderProfile && state.lastInputSize && state.lastTimingSummary) {
+    renderSummary(elements.summary, state.lastResult, state.lastInputSize, state.lastOptions, state.lastRenderProfile, state.lastTimingSummary);
+  }
+
+  if (!state.lastPreviewSvg) {
+    elements.svgPreview.textContent = t("empty.waitingForInput");
+  }
+
+  state.renderedStages = {};
+  void renderActiveStageIfNeeded(elements);
+}
+
+function syncLocaleButtons(elements: DemoElements): void {
+  const locale = getLocale();
+  for (const button of elements.localeButtons) {
+    button.classList.toggle("is-active", button.dataset.locale === locale);
+    button.setAttribute("aria-pressed", String(button.dataset.locale === locale));
+  }
+}
+
 async function ensureWasmReady(elements: DemoElements, logger: Logger): Promise<void> {
-  setStatus(elements, "Initializing Wasm worker...");
+  setStatusKey(elements, "status.initializing");
   try {
     await ensureWorkerReady(logger);
     state.wasmReady = true;
-    setStatus(elements, "Wasm worker is ready, you can upload an image to start processing.");
+    setStatusKey(elements, "status.ready");
   } catch (error) {
     logger.error("Wasm worker 初始化失败", formatUnknownError(error));
-    setStatus(elements, "Wasm worker initialization failed. Check the console or logs for details.", true);
+    setStatusKey(elements, "status.initFailed", undefined, true);
     document.body.dataset.smoke = "init-failed";
   }
 }
@@ -221,7 +313,7 @@ function bindForm(elements: DemoElements, logger: Logger): void {
     }
     if (!state.wasmReady) {
       logger.warn("Wasm runtime 尚未准备完成");
-      setStatus(elements, "Wasm runtime is not ready. Please wait.", true);
+      setStatusKey(elements, "status.runtimeNotReady", undefined, true);
       return;
     }
 
@@ -236,7 +328,7 @@ function bindForm(elements: DemoElements, logger: Logger): void {
     }
 
     logger.warn("未选择输入图片");
-    setStatus(elements, "Please select an image or use a sample to start.", true);
+    setStatusKey(elements, "status.selectInput", undefined, true);
   });
 }
 
@@ -248,7 +340,7 @@ function bindExamples(elements: DemoElements, logger: Logger): void {
         return;
       }
       state.pendingSamplePath = sample;
-      setStatus(elements, `Selected sample: ${sample.split("/").pop() ?? sample}`);
+      setStatusKey(elements, "status.selectedSample", { name: sample.split("/").pop() ?? sample });
       if (state.wasmReady && !state.busy) {
         await runSample(elements, logger, sample);
       }
@@ -341,7 +433,11 @@ async function runSample(elements: DemoElements, logger: Logger, sample: string)
   try {
     const response = await fetch(sample);
     if (!response.ok) {
-      const errorMsg = `无法加载示例图片: ${sample} (HTTP ${response.status} ${response.statusText})`;
+      const errorMsg = t("log.sampleFetchFailed", {
+        sample,
+        status: response.status,
+        statusText: response.statusText,
+      });
       logger.error(errorMsg);
       throw new Error(errorMsg);
     }
@@ -352,9 +448,9 @@ async function runSample(elements: DemoElements, logger: Logger, sample: string)
   } catch (error) {
     if (error instanceof TypeError) {
       // 网络错误（如 CORS、连接失败等）
-      const networkError = `网络请求失败: ${sample} - ${error.message}`;
+      const networkError = t("log.sampleNetworkFailed", { sample, message: error.message });
       logger.error(networkError);
-      setStatus(elements, `Failed to load sample image: ${sample}`, true);
+      setStatusKey(elements, "status.failedToLoadSample", { sample }, true);
       throw new Error(networkError);
     }
     throw error;
@@ -367,8 +463,10 @@ async function runInput(
   inputName: string,
 ): Promise<void> {
   state.busy = true;
+  state.currentProgressStage = null;
   syncBusyState(elements, true);
-  setStatus(elements, "Reading image and calling Wasm SDK...");
+  setStatusKey(elements, "status.readingInput");
+  refreshStageTabs(elements);
 
   try {
     const options = buildGenerateOptions(elements, logger);
@@ -427,15 +525,16 @@ async function runInput(
       totalRenderMs: roundMs(performance.now() - renderStart),
     });
 
-    setStatus(elements, "Processing completed. Results updated.", false);
+    setStatusKey(elements, "status.processingCompleted");
     document.body.dataset.smoke = "pass";
   } catch (error) {
     state.lastPreviewSvg = null;
     state.lastTimingSummary = null;
     state.stageImages = {};
     state.renderedStages = {};
+    state.currentProgressStage = null;
     logger.error("浏览器演示处理失败", formatUnknownError(error));
-    setStatus(elements, "Processing failed. Please check the logs.", true);
+    setStatusKey(elements, "status.processingFailed", undefined, true);
     document.body.dataset.smoke = "run-failed";
     throw error;
   } finally {
@@ -461,7 +560,7 @@ async function maybeRunSmokeMode(elements: DemoElements, logger: Logger): Promis
   } catch (error) {
     logger.error("浏览器 smoke 自动运行失败", formatUnknownError(error));
     document.body.dataset.smoke = "autorun-failed";
-    setStatus(elements, "Smoke run failed. Check log panel.", true);
+    setStatusKey(elements, "status.smokeFailed", undefined, true);
   }
 }
 
@@ -615,7 +714,7 @@ async function callWorkerInit(
       worker.removeEventListener("error", handleError);
 
       if (message.type === "error") {
-        reject(new Error(String(message.error.message ?? message.error.value ?? "Worker 执行失败")));
+        reject(new Error(String(message.error.message ?? message.error.value ?? t("log.workerFailed"))));
         return;
       }
 
@@ -625,7 +724,7 @@ async function callWorkerInit(
     const handleError = (event: ErrorEvent) => {
       worker.removeEventListener("message", handleMessage);
       worker.removeEventListener("error", handleError);
-      reject(new Error(event.message || "Worker 运行失败"));
+      reject(new Error(event.message || t("log.workerRuntimeFailed")));
     };
 
     worker.addEventListener("message", handleMessage);
@@ -666,12 +765,12 @@ async function callWorkerGenerate(
       worker.removeEventListener("error", handleError);
 
       if (message.type === "error") {
-        reject(new Error(String(message.error.message ?? message.error.value ?? "Worker 执行失败")));
+        reject(new Error(String(message.error.message ?? message.error.value ?? t("log.workerFailed"))));
         return;
       }
 
       if (message.type !== "generate:ok") {
-        reject(new Error(`Worker 返回了意外消息: ${message.type}`));
+        reject(new Error(t("log.workerUnexpectedMessage", { type: message.type })));
         return;
       }
 
@@ -681,7 +780,7 @@ async function callWorkerGenerate(
     const handleError = (event: ErrorEvent) => {
       worker.removeEventListener("message", handleMessage);
       worker.removeEventListener("error", handleError);
-      reject(new Error(event.message || "Worker 运行失败"));
+      reject(new Error(event.message || t("log.workerRuntimeFailed")));
     };
 
     worker.addEventListener("message", handleMessage);
@@ -721,11 +820,11 @@ function parseColorRestrictions(input: string, logger: Logger): Array<[number, n
     }
     const parts = line.split(",").map((item) => item.trim());
     if (parts.length !== 3) {
-      throw new Error(`颜色限制第 ${index + 1} 行格式无效，应为 r,g,b`);
+      throw new Error(t("log.colorRestrictionsInvalidFormat", { line: index + 1 }));
     }
     const rgb = parts.map((item) => Number.parseInt(item, 10));
     if (rgb.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
-      throw new Error(`颜色限制第 ${index + 1} 行必须是 0-255 之间的整数`);
+      throw new Error(t("log.colorRestrictionsInvalidRange", { line: index + 1 }));
     }
     colors.push([rgb[0]!, rgb[1]!, rgb[2]!]);
   }
@@ -806,49 +905,143 @@ function rebuildPreviewLabels(
 
   const labelLayer = documentNode.createElementNS(SVG_NS, "g");
   labelLayer.setAttribute("data-preview-label-root", "true");
+  const candidates = labelBounds
+    .map((bounds, index) => ({ bounds, index, facetSummary: facetsSummary[index] }))
+    .filter(({ bounds }) => bounds.width > 0 && bounds.height > 0)
+    .sort((left, right) => {
+      const pointDelta = (right.facetSummary?.pointCount ?? 0) - (left.facetSummary?.pointCount ?? 0);
+      if (pointDelta !== 0) {
+        return pointDelta;
+      }
+      return right.bounds.width * right.bounds.height - left.bounds.width * left.bounds.height;
+    });
+
+  const placedLabelRects: Array<{ minX: number; minY: number; maxX: number; maxY: number }> = [];
   let labelCount = 0;
 
-  for (const [index, bounds] of labelBounds.entries()) {
-    if (bounds.width <= 0 || bounds.height <= 0) {
-      continue;
-    }
-
+  for (const { bounds, index, facetSummary } of candidates) {
     const scaledX = bounds.minX * profile.sizeMultiplier;
     const scaledY = bounds.minY * profile.sizeMultiplier;
     const scaledWidth = bounds.width * profile.sizeMultiplier;
     const scaledHeight = bounds.height * profile.sizeMultiplier;
-    const facetSummary = facetsSummary[index];
     const labelValue = String(facetSummary ? facetSummary.colorIndex : index);
-    const digitDivisor = Math.max(1, labelValue.length);
+    const fontSize = resolvePreviewLabelFontSize(
+      profile.labelFontSize,
+      labelValue,
+      scaledWidth,
+      scaledHeight,
+      facetSummary?.pointCount ?? 0,
+    );
+    if (fontSize <= 0) {
+      continue;
+    }
 
-    // 这里按旧版 labelBounds 语义重建标签容器，让字和图使用同一套比例基准。
-    const wrapper = documentNode.createElementNS(SVG_NS, "svg");
-    wrapper.setAttribute("x", String(scaledX));
-    wrapper.setAttribute("y", String(scaledY));
-    wrapper.setAttribute("width", String(scaledWidth));
-    wrapper.setAttribute("height", String(scaledHeight));
-    wrapper.setAttribute("overflow", "visible");
-    wrapper.setAttribute("viewBox", "-50 -50 100 100");
-    wrapper.setAttribute("preserveAspectRatio", "xMidYMid meet");
-    wrapper.setAttribute("data-preview-label", labelValue);
+    const labelRect = buildPreviewLabelRect(labelValue, scaledX, scaledY, scaledWidth, scaledHeight, fontSize);
+    if (hasPreviewLabelCollision(labelRect, placedLabelRects)) {
+      continue;
+    }
 
     const text = documentNode.createElementNS(SVG_NS, "text");
     text.textContent = labelValue;
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "0");
+    text.setAttribute("x", String(scaledX + scaledWidth / 2));
+    text.setAttribute("y", String(scaledY + scaledHeight / 2));
     text.setAttribute("font-family", "Tahoma, Segoe UI, sans-serif");
-    text.setAttribute("font-size", String(profile.labelFontSize / digitDivisor));
+    text.setAttribute("font-size", String(roundSvgNumber(fontSize)));
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("dominant-baseline", "middle");
     text.setAttribute("fill", profile.labelFontColor);
+    text.setAttribute("data-preview-label", labelValue);
 
-    wrapper.appendChild(text);
-    labelLayer.appendChild(wrapper);
+    labelLayer.appendChild(text);
+    placedLabelRects.push(labelRect);
     labelCount += 1;
   }
 
   root.appendChild(labelLayer);
   return labelCount;
+}
+
+function resolvePreviewLabelFontSize(
+  requestedFontSize: number,
+  labelValue: string,
+  boundsWidth: number,
+  boundsHeight: number,
+  pointCount: number,
+): number {
+  const minLabelWidth = 10;
+  const minLabelHeight = 10;
+  if (boundsWidth < minLabelWidth || boundsHeight < minLabelHeight) {
+    return 0;
+  }
+
+  if (pointCount > 0 && pointCount < 24) {
+    return 0;
+  }
+
+  const safeWidth = boundsWidth * 0.64;
+  const safeHeight = boundsHeight * 0.5;
+  if (safeWidth <= 0 || safeHeight <= 0) {
+    return 0;
+  }
+
+  const estimatedCharWidth = estimatePreviewLabelCharUnits(labelValue);
+  const maxFontByWidth = safeWidth / estimatedCharWidth;
+  const maxFontByHeight = safeHeight;
+  const maxFontByShortSide = Math.min(boundsWidth, boundsHeight) * 0.46;
+  const fontSize = Math.min(requestedFontSize, maxFontByWidth, maxFontByHeight, maxFontByShortSide);
+
+  return fontSize >= 5 ? fontSize : 0;
+}
+
+function buildPreviewLabelRect(
+  labelValue: string,
+  scaledX: number,
+  scaledY: number,
+  scaledWidth: number,
+  scaledHeight: number,
+  fontSize: number,
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  const textWidth = fontSize * estimatePreviewLabelCharUnits(labelValue) * 0.72;
+  const textHeight = fontSize * 0.95;
+  const padding = Math.max(1.5, fontSize * 0.18);
+  const centerX = scaledX + scaledWidth / 2;
+  const centerY = scaledY + scaledHeight / 2;
+
+  return {
+    minX: centerX - textWidth / 2 - padding,
+    minY: centerY - textHeight / 2 - padding,
+    maxX: centerX + textWidth / 2 + padding,
+    maxY: centerY + textHeight / 2 + padding,
+  };
+}
+
+function hasPreviewLabelCollision(
+  candidate: { minX: number; minY: number; maxX: number; maxY: number },
+  placed: Array<{ minX: number; minY: number; maxX: number; maxY: number }>,
+): boolean {
+  for (const existing of placed) {
+    const overlaps =
+      candidate.minX < existing.maxX &&
+      candidate.maxX > existing.minX &&
+      candidate.minY < existing.maxY &&
+      candidate.maxY > existing.minY;
+    if (overlaps) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function estimatePreviewLabelCharUnits(labelValue: string): number {
+  let total = 0;
+  for (const char of labelValue) {
+    total += /[0-9]/.test(char) ? 0.92 : 1.05;
+  }
+  return Math.max(1, total);
+}
+
+function roundSvgNumber(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function renderPreview(elements: DemoElements, previewSvg: string): void {
@@ -877,7 +1070,7 @@ async function renderActiveStageIfNeeded(elements: DemoElements): Promise<void> 
     image?.rgba,
     image?.width ?? 0,
     image?.height ?? 0,
-    `${stageEntry.label} Not Available`,
+    t("empty.stageUnavailable", { stage: stageEntry.label }),
   );
   state.renderedStages[stage] = true;
 }
@@ -903,7 +1096,7 @@ function renderStageCanvas(
   if (!context) {
     canvas.style.display = "none";
     empty.hidden = false;
-    empty.textContent = "无法创建阶段预览画布";
+    empty.textContent = t("error.stageCanvasUnavailable");
     return;
   }
 
@@ -919,15 +1112,15 @@ function getStageRenderTarget(elements: DemoElements, stage: Exclude<StageKey, "
 } | null {
   switch (stage) {
     case "quantized":
-      return { canvas: elements.quantizedCanvas, empty: elements.quantizedEmpty, label: "Quantized image" };
+      return { canvas: elements.quantizedCanvas, empty: elements.quantizedEmpty, label: getStageLabel("quantized") };
     case "reduction":
-      return { canvas: elements.reductionCanvas, empty: elements.reductionEmpty, label: "Facet reduction" };
+      return { canvas: elements.reductionCanvas, empty: elements.reductionEmpty, label: getStageLabel("reduction") };
     case "borderPath":
-      return { canvas: elements.borderPathCanvas, empty: elements.borderPathEmpty, label: "Border tracing" };
+      return { canvas: elements.borderPathCanvas, empty: elements.borderPathEmpty, label: getStageLabel("borderPath") };
     case "borderSegmentation":
-      return { canvas: elements.borderSegmentationCanvas, empty: elements.borderSegmentationEmpty, label: "Border segmentation" };
+      return { canvas: elements.borderSegmentationCanvas, empty: elements.borderSegmentationEmpty, label: getStageLabel("borderSegmentation") };
     case "labelPlacement":
-      return { canvas: elements.labelPlacementCanvas, empty: elements.labelPlacementEmpty, label: "Label placement" };
+      return { canvas: elements.labelPlacementCanvas, empty: elements.labelPlacementEmpty, label: getStageLabel("labelPlacement") };
   }
 }
 
@@ -943,30 +1136,103 @@ function selectStage(elements: DemoElements, stage: StageKey): void {
   }
 }
 
-function updateProgressUi(stage: WorkerProgressStage, label: string): void {
+function getStageLabel(stage: StageKey): string {
+  switch (stage) {
+    case "quantized":
+      return t("stage.tab.quantized");
+    case "reduction":
+      return t("stage.tab.reduction");
+    case "borderPath":
+      return t("stage.tab.borderPath");
+    case "borderSegmentation":
+      return t("stage.tab.borderSegmentation");
+    case "labelPlacement":
+      return t("stage.tab.labelPlacement");
+    case "output":
+      return t("stage.tab.output");
+  }
+}
+
+function getProgressStageLabel(stage: WorkerProgressStage): string {
+  switch (stage) {
+    case "init":
+      return t("stage.progress.init");
+    case "decode":
+      return t("stage.progress.decode");
+    case "quantize":
+      return t("stage.progress.quantize");
+    case "reduction":
+      return t("stage.progress.reduction");
+    case "contours":
+      return t("stage.progress.contours");
+    case "labels":
+      return t("stage.progress.labels");
+    case "render":
+      return t("stage.progress.render");
+    case "done":
+      return t("stage.progress.done");
+  }
+}
+
+function getRenderedStageTabLabel(stage: StageKey, progressStage: WorkerProgressStage | null): string {
+  const base = getStageLabel(stage);
+  const activeStage = getStageKeyForProgressStage(progressStage);
+  if (progressStage === "done" && stage === "output") {
+    return `${base} · ${t("stage.state.done")}`;
+  }
+  if (activeStage && progressStage !== "done" && stage === activeStage) {
+    return `${base} · ${t("stage.state.running")}`;
+  }
+  return base;
+}
+
+function getStageKeyForProgressStage(stage: WorkerProgressStage | null): StageKey | null {
+  switch (stage) {
+    case "quantize":
+      return "quantized";
+    case "reduction":
+      return "reduction";
+    case "contours":
+      return "borderPath";
+    case "labels":
+      return "labelPlacement";
+    case "render":
+    case "done":
+      return "output";
+    default:
+      return null;
+  }
+}
+
+function refreshStageTabs(elements: DemoElements): void {
+  for (const tab of elements.stageTabs) {
+    const stage = tab.dataset.stageTab as StageKey | undefined;
+    if (!stage) {
+      continue;
+    }
+    tab.textContent = getRenderedStageTabLabel(stage, state.currentProgressStage);
+  }
+}
+
+function updateProgressUi(stage: WorkerProgressStage, _label: string): void {
+  state.currentProgressStage = stage;
+  state.statusMessage = {
+    key: "status.processingStage",
+    params: { label: getProgressStageLabel(stage) },
+    isError: false,
+  };
   const statusElement = document.querySelector<HTMLElement>("#status");
   if (statusElement) {
-    statusElement.textContent = `Processing: ${label}`;
+    statusElement.textContent = t(state.statusMessage.key, state.statusMessage.params);
     statusElement.dataset.state = "normal";
   }
 
-  const stageToTab = new Map<WorkerProgressStage, StageKey>([
-    ["quantize", "quantized"],
-    ["reduction", "reduction"],
-    ["contours", "borderPath"],
-    ["labels", "labelPlacement"],
-    ["render", "output"],
-  ]);
-  const activeStage = stageToTab.get(stage);
   document.querySelectorAll<HTMLButtonElement>("[data-stage-tab]").forEach((tab) => {
-    const base = tab.textContent?.split(" · ")[0] ?? "";
-    tab.textContent = base;
-    if (activeStage && tab.dataset.stageTab === activeStage && stage !== "done") {
-      tab.textContent = `${base} · running`;
+    const tabStage = tab.dataset.stageTab as StageKey | undefined;
+    if (!tabStage) {
+      return;
     }
-    if (stage === "done" && tab.dataset.stageTab === "output") {
-      tab.textContent = `${base} · done`;
-    }
+    tab.textContent = getRenderedStageTabLabel(tabStage, state.currentProgressStage);
   });
 }
 
@@ -989,7 +1255,7 @@ function toStagePanelId(stage: StageKey): string {
 
 async function downloadPreviewSvg(elements: DemoElements, logger: Logger): Promise<void> {
   if (!state.lastPreviewSvg) {
-    logger.warn("当前没有可下载的 SVG 预览结果");
+    logger.warn(t("log.noSvgToDownload"));
     return;
   }
 
@@ -1004,7 +1270,7 @@ async function downloadPreviewSvg(elements: DemoElements, logger: Logger): Promi
 
 async function downloadPreviewPng(elements: DemoElements, logger: Logger): Promise<void> {
   if (!state.lastPreviewSvg) {
-    logger.warn("当前没有可下载的 PNG 预览结果");
+    logger.warn(t("log.noPngToDownload"));
     return;
   }
 
@@ -1014,7 +1280,7 @@ async function downloadPreviewPng(elements: DemoElements, logger: Logger): Promi
   const width = toPositiveNumber(root.getAttribute("width") ?? "0", 0);
   const height = toPositiveNumber(root.getAttribute("height") ?? "0", 0);
   if (width <= 0 || height <= 0) {
-    throw new Error("当前预览 SVG 缺少有效尺寸，无法导出 PNG");
+    throw new Error(t("log.invalidSvgSize"));
   }
 
   const rasterizeStart = performance.now();
@@ -1030,7 +1296,7 @@ async function downloadPreviewPng(elements: DemoElements, logger: Logger): Promi
     canvas.height = Math.round(height);
     const context = canvas.getContext("2d");
     if (!context) {
-      throw new Error("无法创建 PNG 导出所需的 Canvas 上下文");
+      throw new Error(t("log.pngContextUnavailable"));
     }
 
     context.clearRect(0, 0, canvas.width, canvas.height);
@@ -1093,7 +1359,7 @@ function updateExportTiming(
 
 function syncBusyState(elements: DemoElements, busy: boolean): void {
   elements.generateButton.disabled = busy;
-  elements.generateButton.textContent = busy ? "Processing..." : "Generate";
+  elements.generateButton.textContent = busy ? t("action.processing") : t("action.generate");
   syncDownloadState(elements);
 }
 
@@ -1103,7 +1369,17 @@ function syncDownloadState(elements: DemoElements): void {
   elements.downloadPngButton.disabled = !enabled;
 }
 
-function setStatus(elements: DemoElements, message: string, isError = false): void {
+function setStatusKey(
+  elements: DemoElements,
+  key: I18nKey,
+  params?: Record<string, string | number>,
+  isError = false,
+): void {
+  state.statusMessage = { key, params, isError };
+  renderStatusText(elements, t(key, params), isError);
+}
+
+function renderStatusText(elements: DemoElements, message: string, isError = false): void {
   elements.status.textContent = message;
   elements.status.dataset.state = isError ? "error" : "normal";
 }
@@ -1118,64 +1394,97 @@ function renderSummary(
 ): void {
   const stageTimings = result.metrics?.stageTimings ?? {};
   const pipelineStats = result.metrics?.pipelineStats ?? {};
-  const timingLines = Object.entries(stageTimings).map(([key, value]) => `pipeline.${key}: ${value} ms`);
-  const statsLines = Object.entries(pipelineStats).map(([key, value]) => `${key}: ${value}`);
+  const timingLines = Object.entries(stageTimings).map(([key, value]) => `${getStageTimingLabel(key)}: ${value} ${t("summary.unit.ms")}`);
+  const statsLines = Object.entries(pipelineStats).map(([key, value]) => `${getPipelineStatLabel(key)}: ${value}`);
   const optionLines = [
-    `resize.enabled: ${String(options.resize?.enabled ?? true)}`,
-    `resize.maxWidth: ${String(options.resize?.maxWidth ?? 1024)}`,
-    `resize.maxHeight: ${String(options.resize?.maxHeight ?? 1024)}`,
-    `kmeansClusters: ${String(options.kmeansClusters ?? 16)}`,
-    `kmeansMinDelta: ${String(options.kmeansMinDelta ?? 1)}`,
-    `kmeansColorSpace.requested: ${String(options.kmeansColorSpace ?? "rgb")}`,
-    `kmeansColorSpace.effective: ${options.kmeansColorSpace === "rgb" || !options.kmeansColorSpace ? "rgb" : "rgb (fallback)"}`,
-    `colorRestrictions: ${String(options.colorRestrictions?.length ?? 0)}`,
-    `narrowPixelCleanupRuns: ${String(options.narrowPixelCleanupRuns ?? 3)}`,
-    `removeFacetsSmallerThan: ${String(options.removeFacetsSmallerThan ?? 20)}`,
-    `removeFacetsFromLargeToSmall: ${String(options.removeFacetsFromLargeToSmall ?? true)}`,
-    `maximumNumberOfFacets: ${String(options.maximumNumberOfFacets ?? 4294967295)}`,
-    `borderSmoothingPasses: ${String(options.borderSmoothingPasses ?? 2)}`,
-    `preview.sizeMultiplier: ${String(renderProfile.sizeMultiplier)}`,
-    `preview.showLabels: ${String(renderProfile.showLabels)}`,
-    `preview.fillFacets: ${String(renderProfile.fillFacets)}`,
-    `preview.showBorders: ${String(renderProfile.showBorders)}`,
-    `preview.labelFontSize: ${String(renderProfile.labelFontSize)}`,
-    `preview.labelFontColor: ${renderProfile.labelFontColor}`,
+    `${t("summary.option.resizeEnabled")}: ${formatBooleanValue(options.resize?.enabled ?? true)}`,
+    `${t("summary.option.resizeMaxWidth")}: ${String(options.resize?.maxWidth ?? 1024)}`,
+    `${t("summary.option.resizeMaxHeight")}: ${String(options.resize?.maxHeight ?? 1024)}`,
+    `${t("summary.option.kmeansClusters")}: ${String(options.kmeansClusters ?? 16)}`,
+    `${t("summary.option.kmeansMinDelta")}: ${String(options.kmeansMinDelta ?? 1)}`,
+    `${t("summary.option.kmeansColorSpaceRequested")}: ${formatColorSpaceValue(options.kmeansColorSpace ?? "rgb")}`,
+    `${t("summary.option.kmeansColorSpaceEffective")}: ${options.kmeansColorSpace === "rgb" || !options.kmeansColorSpace ? t("summary.value.rgb") : t("summary.value.rgbFallback")}`,
+    `${t("summary.option.colorRestrictions")}: ${String(options.colorRestrictions?.length ?? 0)}`,
+    `${t("summary.option.cleanupRuns")}: ${String(options.narrowPixelCleanupRuns ?? 3)}`,
+    `${t("summary.option.removeFacetsSmallerThan")}: ${String(options.removeFacetsSmallerThan ?? 20)}`,
+    `${t("summary.option.removeFacetsOrder")}: ${formatBooleanValue(options.removeFacetsFromLargeToSmall ?? true)}`,
+    `${t("summary.option.maximumFacets")}: ${String(options.maximumNumberOfFacets ?? 4294967295)}`,
+    `${t("summary.option.borderSmoothingPasses")}: ${String(options.borderSmoothingPasses ?? 2)}`,
+    `${t("summary.option.previewSizeMultiplier")}: ${String(renderProfile.sizeMultiplier)}`,
+    `${t("summary.option.previewShowLabels")}: ${formatBooleanValue(renderProfile.showLabels)}`,
+    `${t("summary.option.previewFillFacets")}: ${formatBooleanValue(renderProfile.fillFacets)}`,
+    `${t("summary.option.previewShowBorders")}: ${formatBooleanValue(renderProfile.showBorders)}`,
+    `${t("summary.option.previewLabelFontSize")}: ${String(renderProfile.labelFontSize)}`,
+    `${t("summary.option.previewLabelFontColor")}: ${renderProfile.labelFontColor}`,
   ];
   const previewTimingLines = [
-    `timing.decodeImageMs: ${timing.decodeImageMs} ms`,
-    `timing.sdkGenerateMs: ${timing.sdkGenerateMs} ms`,
-    `timing.total.processingMs: ${timing.processingMs} ms`,
-    `timing.previewBuildMs: ${timing.previewBuildMs} ms`,
-    `timing.preview.applyShapeProfileMs: ${timing.applyShapeProfileMs} ms`,
-    `timing.preview.rebuildLabelsMs: ${timing.rebuildLabelsMs} ms`,
-    `timing.preview.renderDomMs: ${timing.renderDomMs} ms`,
-    `timing.total.previewMs: ${roundMs(timing.previewBuildMs + timing.renderDomMs)} ms`,
-    `timing.total.endToEndMs: ${timing.endToEndMs} ms`,
+    `${t("summary.timing.decodeImageMs")}: ${timing.decodeImageMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.sdkGenerateMs")}: ${timing.sdkGenerateMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.processingMs")}: ${timing.processingMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.previewBuildMs")}: ${timing.previewBuildMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.applyShapeProfileMs")}: ${timing.applyShapeProfileMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.rebuildLabelsMs")}: ${timing.rebuildLabelsMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.renderDomMs")}: ${timing.renderDomMs} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.totalPreviewMs")}: ${roundMs(timing.previewBuildMs + timing.renderDomMs)} ${t("summary.unit.ms")}`,
+    `${t("summary.timing.endToEndMs")}: ${timing.endToEndMs} ${t("summary.unit.ms")}`,
   ];
 
   if (typeof timing.exportSvgMs === "number") {
-    previewTimingLines.push(`timing.exportSvgMs: ${timing.exportSvgMs} ms`);
+    previewTimingLines.push(`${t("summary.timing.exportSvgMs")}: ${timing.exportSvgMs} ${t("summary.unit.ms")}`);
   }
   if (typeof timing.exportPngRasterizeMs === "number") {
-    previewTimingLines.push(`timing.exportPngRasterizeMs: ${timing.exportPngRasterizeMs} ms`);
+    previewTimingLines.push(`${t("summary.timing.exportPngRasterizeMs")}: ${timing.exportPngRasterizeMs} ${t("summary.unit.ms")}`);
   }
   if (typeof timing.exportPngEncodeMs === "number") {
-    previewTimingLines.push(`timing.exportPngEncodeMs: ${timing.exportPngEncodeMs} ms`);
+    previewTimingLines.push(`${t("summary.timing.exportPngEncodeMs")}: ${timing.exportPngEncodeMs} ${t("summary.unit.ms")}`);
   }
   if (typeof timing.exportPngMs === "number") {
-    previewTimingLines.push(`timing.total.exportPngMs: ${timing.exportPngMs} ms`);
+    previewTimingLines.push(`${t("summary.timing.exportPngMs")}: ${timing.exportPngMs} ${t("summary.unit.ms")}`);
   }
 
   target.innerHTML = [
-    `输入尺寸：${input.width} x ${input.height}`,
-    `调色板数量：${result.palette.length}`,
-    `Facet 数量：${result.facetCount}`,
-    `SVG 大小：${result.svg.length} 字符`,
+    `${t("summary.inputSize")}: ${input.width} x ${input.height}`,
+    `${t("summary.paletteSize")}: ${result.palette.length}`,
+    `${t("summary.facetCount")}: ${result.facetCount}`,
+    `${t("summary.svgSize")}: ${result.svg.length} ${t("summary.characters")}`,
     ...optionLines,
     ...previewTimingLines,
     ...timingLines,
     ...statsLines,
   ].map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+}
+
+function getStageTimingLabel(key: string): string {
+  const translationKey = STAGE_TIMING_LABELS[key];
+  return translationKey ? t(translationKey) : humanizeMetricKey(key);
+}
+
+function getPipelineStatLabel(key: string): string {
+  const translationKey = PIPELINE_STAT_LABELS[key];
+  return translationKey ? t(translationKey) : humanizeMetricKey(key);
+}
+
+function formatBooleanValue(value: boolean): string {
+  return value ? t("summary.value.true") : t("summary.value.false");
+}
+
+function formatColorSpaceValue(value: KmeansColorSpace): string {
+  switch (value) {
+    case "rgb":
+      return t("summary.value.rgb");
+    case "hsl":
+      return "HSL";
+    case "lab":
+      return "Lab";
+  }
+}
+
+function humanizeMetricKey(key: string): string {
+  return key
+    .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replaceAll(/[_-]+/g, " ")
+    .trim()
+    .replace(/^\w/, (char) => char.toUpperCase());
 }
 
 function renderPalette(target: HTMLElement, result: ProcessOutput): void {
@@ -1186,7 +1495,7 @@ function renderPalette(target: HTMLElement, result: ProcessOutput): void {
       <li class="palette-item">
         <span class="swatch" style="background:${escapeHtml(color)}"></span>
         <span>#${entry.index}${alias}</span>
-        <span>${entry.frequency} px / ${(entry.areaPercentage * 100).toFixed(2)}%</span>
+        <span>${entry.frequency} px &nbsp; ${(entry.areaPercentage * 100).toFixed(2)}%</span>
       </li>
     `;
   }).join("");
@@ -1216,7 +1525,7 @@ async function readImageFile(
   canvas.height = targetSize.height;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
-    throw new Error("无法创建 2D Canvas 上下文");
+    throw new Error(t("log.imageDecodeContextUnavailable"));
   }
 
   context.imageSmoothingEnabled = true;
@@ -1289,7 +1598,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   image.decoding = "async";
   return await new Promise((resolve, reject) => {
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("无法从当前 SVG 预览构建 PNG 图像"));
+    image.onerror = () => reject(new Error(t("log.previewPngLoadFailed")));
     image.src = url;
   });
 }
@@ -1300,7 +1609,7 @@ async function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Bl
       if (blob) {
         resolve(blob);
       } else {
-        reject(new Error("Canvas 导出失败，未生成二进制数据"));
+        reject(new Error(t("log.canvasExportFailed")));
       }
     }, type);
   });
@@ -1331,7 +1640,7 @@ function nextFrame(): Promise<void> {
 function requireElement<T extends Element>(root: ParentNode, selector: string, ctor: { new(): T }): T {
   const element = root.querySelector(selector);
   if (!(element instanceof ctor)) {
-    throw new Error(`缺少必需的页面元素: ${selector}`);
+    throw new Error(t("log.missingElement", { selector }));
   }
   return element;
 }
