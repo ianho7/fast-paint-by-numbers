@@ -25,5 +25,5 @@ docs/
 *.log
 .env*
 
-# test
-test.jpeg
+# performance
+**/benchmarks/output

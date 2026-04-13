@@ -133,6 +133,19 @@ async function handleImageUpload(inputPath: string, outputPath: string) {
 
 * * *
 
+## ⚡ 性能基准测试
+
+测试使用的执行参数（不调整图片大小）：
+`--kmeans-clusters 16 --remove-facets-smaller-than 20 --border-smoothing-passes 2`
+
+| 图片尺寸 | 分辨率 | Rust CLI (exe) | NPM CLI (Wasm) | Vanilla JS solution |
+| :--- | :--- | :--- | :--- | ---- |
+| **小 (Small)** | 640x426 (0.27 MP) | 0.90s | 1.69s | 9.513s |
+| **中 (Medium)** | 1280x853 (1.09 MP) | 10.02s | 15.28s | 360.122s |
+| **大 (Large)** | 1920x1280 (2.46 MP) | 28.57s | 29.52s | RangeError Maximum call stack size exceeded |
+
+* * *
+
 ## 🏗 从源代码开始构建
 
 ### 构建 SDK（Wasm + TS）
