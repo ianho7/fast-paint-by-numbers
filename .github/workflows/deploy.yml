@@ -39,7 +39,8 @@ jobs:
         run: npm install
 
       - name: Build SDK
-        run: npx tsc -p packages/sdk/tsconfig.json
+        working-directory: packages/sdk
+        run: npx tsc -p tsconfig.json
 
       - name: Install web dependencies
         working-directory: packages/web
