@@ -9,7 +9,7 @@ import type {
   ProcessOutput,
   RgbaInput,
 } from "fast-paint-by-numbers";
-import wasmUrl from "../../sdk/generated/pbn_core_bg.wasm?url";
+import wasmUrl from "./assets/pbn_core_bg.wasm?url";
 
 type WorkerRequest =
   | { id: number; type: "init" }
