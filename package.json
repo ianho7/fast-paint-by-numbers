@@ -2,9 +2,6 @@
     "name": "fast-paint-by-numbers",
     "private": true,
     "packageManager": "bun@1.3.3",
-    "workspaces": [
-        "packages/!(web-demo)"
-    ],
     "volta": {
         "node": "24.14.1"
     },
@@ -12,11 +9,11 @@
         "build": "bun run build:wasm \u0026\u0026 bun run build:sdk \u0026\u0026 bun run build:web",
         "build:wasm": "powershell -ExecutionPolicy Bypass -File ./scripts/build-sdk-wasm.ps1",
         "build:sdk": "bun packages/sdk/node_modules/typescript/bin/tsc -p packages/sdk/tsconfig.json",
-        "build:web": "bun packages/web-demo/node_modules/typescript/bin/tsc -p packages/web-demo/tsconfig.json",
-        "type-check": "bun packages/sdk/node_modules/typescript/bin/tsc -p packages/sdk/tsconfig.json --noEmit \u0026\u0026 bun packages/web-demo/node_modules/typescript/bin/tsc -p packages/web-demo/tsconfig.json --noEmit",
+        "build:web": "cd packages/web && bun run build",
+        "type-check": "bun packages/sdk/node_modules/typescript/bin/tsc -p packages/sdk/tsconfig.json --noEmit \u0026\u0026 cd packages/web && bun run type-check",
         "check": "cargo check \u0026\u0026 bun run type-check",
         "test:rust": "cargo test",
-        "serve:web": "bun ./scripts/serve-web-demo.mjs",
+        "serve:web": "cd packages/web && bun run dev",
         "baseline:optimized": "powershell -ExecutionPolicy Bypass -File ./scripts/generate-optimized-baseline.ps1",
         "bench:optimized": "powershell -ExecutionPolicy Bypass -File ./scripts/benchmark-optimized.ps1 -Runs 2",
         "baseline:legacy": "powershell -ExecutionPolicy Bypass -File ./scripts/verify-legacy-baseline.ps1",

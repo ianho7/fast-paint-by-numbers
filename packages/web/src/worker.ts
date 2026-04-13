@@ -9,6 +9,7 @@ import type {
   ProcessOutput,
   RgbaInput,
 } from "fast-paint-by-numbers";
+import wasmUrl from "../../sdk/generated/pbn_core_bg.wasm?url";
 
 type WorkerRequest =
   | { id: number; type: "init" }
@@ -61,7 +62,7 @@ async function ensureReady(requestId: number): Promise<void> {
 
   const logger = createWorkerLogger(requestId, "info");
   postMessage({ id: requestId, type: "progress", stage: "init", label: "初始化 Wasm worker" } satisfies WorkerResponse);
-  await initializeWasmRuntime({}, logger);
+  await initializeWasmRuntime({ source: wasmUrl }, logger);
   ready = true;
 }
 
