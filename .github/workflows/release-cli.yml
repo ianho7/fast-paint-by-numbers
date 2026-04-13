@@ -34,7 +34,7 @@ jobs:
             label: macos-arm64
             binary_name: pbn-cli
             asset_name: pbn-cli-macos-arm64.tar.gz
-          - os: macos-13
+          - os: macos-15-intel
             label: macos-x64
             binary_name: pbn-cli
             asset_name: pbn-cli-macos-x64.tar.gz
