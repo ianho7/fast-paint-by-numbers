@@ -1,6 +1,6 @@
 {
   "name": "fast-paint-by-numbers",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "Fast Paint-By-Numbers generator using Rust Core and Wasm SDK",
   "private": false,
   "type": "module",

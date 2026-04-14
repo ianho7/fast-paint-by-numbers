@@ -1,11 +1,13 @@
 import { createConsoleLogger } from "./logger.js";
 import type { Logger } from "./logger.js";
+import { resolveResizeDimensions } from "./resize.js";
 import { getPaintByNumbersRuntime, hasPaintByNumbersRuntime, setPaintByNumbersRuntime } from "./runtime.js";
 import type { PaintByNumbersRuntime } from "./runtime.js";
 import type { GenerateOptions, PaletteEntry, ProcessOutput, RgbaInput, WasmInitOptions } from "./types.js";
 import { buildRustSettings, normalizeProcessOutput } from "./serde.js";
 
 export * from "./types.js";
+export * from "./resize.js";
 export { createConsoleLogger, setPaintByNumbersRuntime };
 export type { Logger, PaintByNumbersRuntime };
 
@@ -30,7 +32,8 @@ export function prepareRgbaInput(
  * 在 Node.js 环境中调用会抛出错误。
  */
 export async function prepareRgbaFromImageSource(
-  source: Blob | TexImageSource | ImageBitmap
+  source: Blob | TexImageSource | ImageBitmap,
+  options: Pick<GenerateOptions, "resize"> = {}
 ): Promise<RgbaInput> {
   const hasDocument = typeof globalThis.document !== "undefined";
   const hasOffscreenCanvas = typeof globalThis.OffscreenCanvas !== "undefined";
@@ -47,22 +50,23 @@ export async function prepareRgbaFromImageSource(
     : await createImageBitmap(source as Blob | TexImageSource);
 
   try {
+    const targetSize = resolveResizeDimensions(imageBitmap.width, imageBitmap.height, options.resize);
     let canvas: HTMLCanvasElement | OffscreenCanvas;
     if (hasDocument) {
       canvas = globalThis.document.createElement("canvas");
     } else {
-      canvas = new globalThis.OffscreenCanvas(imageBitmap.width, imageBitmap.height);
+      canvas = new globalThis.OffscreenCanvas(targetSize.width, targetSize.height);
     }
 
-    canvas.width = imageBitmap.width;
-    canvas.height = imageBitmap.height;
+    canvas.width = targetSize.width;
+    canvas.height = targetSize.height;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!ctx) {
       throw new Error("无法获取 Canvas 2D 上下文");
     }
 
-    ctx.drawImage(imageBitmap, 0, 0);
+    ctx.drawImage(imageBitmap, 0, 0, targetSize.width, targetSize.height);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
     return {

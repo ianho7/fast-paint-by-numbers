@@ -34,6 +34,11 @@ npm install -g fast-paint-by-numbers
 npm install fast-paint-by-numbers
 ```
 
+### 2. Native Rust Executable
+Prebuilt native executables can also be downloaded directly from GitHub Releases:
+
+https://github.com/ianho7/fast-paint-by-numbers/releases/
+
 ---
 
 ## 🚀 Quick Start (CLI)
@@ -53,6 +58,26 @@ fast-pbn \
   --verbose
 ```
 
+### Native Rust CLI
+If you prefer the standalone Rust executable instead of the npm CLI:
+
+```bash
+# Build the native executable
+cargo build --release -p pbn-cli
+
+# Run the native executable
+./target/release/pbn-cli \
+  --input photo.jpg \
+  --output ./output_dir \
+  --kmeans-clusters 24 \
+  --remove-facets-smaller-than 20 \
+  --border-smoothing-passes 2 \
+  --format svg,palette.json,quantized.png,png \
+  --verbose
+```
+
+On Windows, the executable path is `.\target\release\pbn-cli.exe`.
+
 ### Common Options:
 - `-i, --input <path>`: Path to the input image (JPG, PNG, WebP).
 - `-o, --output <path>`: Output directory or base filename.
@@ -60,8 +85,15 @@ fast-pbn \
 - `-k, --kmeans-clusters <num>`: Number of colors to quantize (default: 16).
 - `--remove-facets-smaller-than <px>`: Filter out small noise regions (default: 20).
 - `--border-smoothing-passes <num>`: Smoothness of vector paths (default: 2).
-- `--format <list>`: Output formats (svg, palette.json, quantized.png, png, jpg).
+- `--format <list>`: Output formats (svg, palette.json, quantized.png, png, jpg). Default: `svg,palette.json,quantized.png,png`.
+- `--resize`: Enable input downscaling before processing using the default `1024x1024` limits.
+- `--no-resize`: Disable input downscaling before processing.
+- `--resize-max-width <num>`: Maximum input width before downscaling (default: 1024).
+- `--resize-max-height <num>`: Maximum input height before downscaling (default: 1024).
 - `--log-level <level>`: Logging verbosity (info, debug, warn, error).
+
+> [!NOTE]
+> Resize is disabled by default. Passing `--resize` or either `--resize-max-width` / `--resize-max-height` enables it. When enabled, it is applied before processing, and the resized dimensions become the actual processing and output dimensions.
 
 ---
 
@@ -133,11 +165,11 @@ async function handleImageUpload(inputPath: string, outputPath: string) {
 Benchmarks conducted using the following parameters(No resizing):
 `--kmeans-clusters 16 --remove-facets-smaller-than 20 --border-smoothing-passes 2`
 
-| Image Size | Resolution | Rust CLI (exe) | NPM CLI (Wasm) | Vanilla JS solution |
-| :--- | :--- | :--- | :--- | ---- |
-| **Small** | 640x426 (0.27 MP) | 0.809s | 1.114s | 9.513s |
-| **Medium** | 1280x853 (1.09 MP) | 8.892s | 7.365s | 360.122s |
-| **Large** | 1920x1280 (2.46 MP) | 19.313s | 17.286s | RangeError Maximum call stack size exceeded |
+| Image Size | Resolution | Rust CLI (exe) | NPM CLI (Wasm) | Vanilla JS solution<br />https://github.com/drake7707/paintbynumbersgenerator | Python solution<br />https://github.com/CoderHam/PaintingByNumbersIFY<br />Running on CPU |
+| :--- | :--- | :--- | :--- | ---- | ---- |
+| **Small** | 640x426 (0.27 MP) | 0.87s | 1.47s | 9.513s | 3.37s |
+| **Medium** | 1280x853 (1.09 MP) | 9.36s | 7.73s | 360.122s | 10.37s |
+| **Large** | 1920x1280 (2.46 MP) | 20.64s | 18.08s | RangeError Maximum call stack size exceeded | 21.97s |
 
 ---
 

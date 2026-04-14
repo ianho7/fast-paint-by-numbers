@@ -35,7 +35,7 @@ pub struct ResizeSettings {
 impl Default for ResizeSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             max_width: 1024,
             max_height: 1024,
         }

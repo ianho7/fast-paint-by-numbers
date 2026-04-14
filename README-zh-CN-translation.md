@@ -35,6 +35,12 @@ npm install -g fast-paint-by-numbers
 npm install fast-paint-by-numbers
 ```
 
+### 2\. 原生 Rust 可执行文件
+
+也可以直接从 GitHub Releases 下载已构建好的原生可执行文件使用：
+
+https://github.com/ianho7/fast-paint-by-numbers/releases/
+
 * * *
 
 ## 🚀 快速入门（CLI）
@@ -54,6 +60,27 @@ fast-pbn \
   --verbose
 ```
 
+### 原生 Rust CLI
+
+如果你更希望使用独立的 Rust 可执行文件，而不是 npm CLI，可以这样使用：
+
+```bash
+# 构建原生可执行文件
+cargo build --release -p pbn-cli
+
+# 运行原生可执行文件
+./target/release/pbn-cli \
+  --input photo.jpg \
+  --output ./output_dir \
+  --kmeans-clusters 24 \
+  --remove-facets-smaller-than 20 \
+  --border-smoothing-passes 2 \
+  --format svg,palette.json,quantized.png,png \
+  --verbose
+```
+
+在 Windows 上，可执行文件路径为 `.\target\release\pbn-cli.exe`。
+
 ### 常用选项：
 
 *   `-i, --input <path>` ：输入图片的路径（JPG、PNG、WebP 格式）。
@@ -62,8 +89,15 @@ fast-pbn \
 *   `-k, --kmeans-clusters <num>` ：需要量化的颜色数量（默认：16）。
 *   `--remove-facets-smaller-than <px>` ：过滤掉小的噪声区域（默认值：20）。
 *   `--border-smoothing-passes <num>` ：矢量路径的平滑度（默认值：2）。
-*   `--format <list>` ：输出格式（svg、palette.json、quantized.png、png、jpg）。
+*   `--format <list>` ：输出格式（svg、palette.json、quantized.png、png、jpg）。默认值：`svg,palette.json,quantized.png,png`。
+*   `--resize` ：使用默认的 `1024x1024` 限制，在处理前启用输入图片缩放。
+*   `--no-resize` ：在处理前禁用输入图片缩放。
+*   `--resize-max-width <num>` ：处理前允许的输入图片最大宽度（默认值：1024）。传入该参数时会自动启用 resize。
+*   `--resize-max-height <num>` ：处理前允许的输入图片最大高度（默认值：1024）。传入该参数时会自动启用 resize。
 *   `--log-level <level>` ：日志详细程度（信息、调试、警告、错误）。
+
+> [!NOTE]
+> 默认情况下不会进行 resize。传入 `--resize`，或传入 `--resize-max-width` / `--resize-max-height` 任一参数时，会自动启用 resize。启用后，缩放会在正式处理前执行，缩放后的尺寸也会成为最终输出结果的实际尺寸。
 
 * * *
 
@@ -138,11 +172,11 @@ async function handleImageUpload(inputPath: string, outputPath: string) {
 测试使用的执行参数（不调整图片大小）：
 `--kmeans-clusters 16 --remove-facets-smaller-than 20 --border-smoothing-passes 2`
 
-| 图片尺寸 | 分辨率 | Rust CLI (exe) | NPM CLI (Wasm) | Vanilla JS solution |
-| :--- | :--- | :--- | :--- | ---- |
-| **小 (Small)** | 640x426 (0.27 MP) | 0.90s | 1.69s | 9.513s |
-| **中 (Medium)** | 1280x853 (1.09 MP) | 10.02s | 15.28s | 360.122s |
-| **大 (Large)** | 1920x1280 (2.46 MP) | 28.57s | 29.52s | RangeError Maximum call stack size exceeded |
+| 图片尺寸 | 分辨率 | Rust CLI (exe) | NPM CLI (Wasm) | 原生 Javascript 方案<br />https://github.com/drake7707/paintbynumbersgenerator | Python 方案<br />https://github.com/CoderHam/PaintingByNumbersIFY<br />CPU模式运行 |
+| :--- | :--- | :--- | :--- | ---- | ---- |
+| **小 (Small)** | 640x426 (0.27 MP) | 0.87s | 1.47s | 9.51s | 3.37s |
+| **中 (Medium)** | 1280x853 (1.09 MP) | 9.36s | 7.73s | 360.12s | 10.37s |
+| **大 (Large)** | 1920x1280 (2.46 MP) | 20.64s | 18.08s | RangeError Maximum call stack size exceeded | 21.97s |
 
 * * *
 

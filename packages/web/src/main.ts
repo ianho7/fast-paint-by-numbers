@@ -1,6 +1,7 @@
 
 import {
   createConsoleLogger,
+  resolveResizeDimensions,
   type FacetSummary,
 } from "fast-paint-by-numbers";
 import type {
@@ -1397,7 +1398,7 @@ function renderSummary(
   const timingLines = Object.entries(stageTimings).map(([key, value]) => `${getStageTimingLabel(key)}: ${value} ${t("summary.unit.ms")}`);
   const statsLines = Object.entries(pipelineStats).map(([key, value]) => `${getPipelineStatLabel(key)}: ${value}`);
   const optionLines = [
-    `${t("summary.option.resizeEnabled")}: ${formatBooleanValue(options.resize?.enabled ?? true)}`,
+    `${t("summary.option.resizeEnabled")}: ${formatBooleanValue(options.resize?.enabled ?? false)}`,
     `${t("summary.option.resizeMaxWidth")}: ${String(options.resize?.maxWidth ?? 1024)}`,
     `${t("summary.option.resizeMaxHeight")}: ${String(options.resize?.maxHeight ?? 1024)}`,
     `${t("summary.option.kmeansClusters")}: ${String(options.kmeansClusters ?? 16)}`,
@@ -1513,13 +1514,7 @@ async function readImageFile(
   });
 
   const imageBitmap = await createImageBitmap(file);
-  const targetSize = resolveResizeDimensions(
-    imageBitmap.width,
-    imageBitmap.height,
-    options?.resize?.enabled ?? true,
-    options?.resize?.maxWidth ?? 1024,
-    options?.resize?.maxHeight ?? 1024,
-  );
+  const targetSize = resolveResizeDimensions(imageBitmap.width, imageBitmap.height, options?.resize);
   const canvas = document.createElement("canvas");
   canvas.width = targetSize.width;
   canvas.height = targetSize.height;
@@ -1544,42 +1539,6 @@ async function readImageFile(
   });
 
   return { width: imageData.width, height: imageData.height, rgba: new Uint8Array(imageData.data) };
-}
-
-function resolveResizeDimensions(
-  width: number,
-  height: number,
-  enabled: boolean,
-  maxWidth: number,
-  maxHeight: number,
-): {
-  width: number;
-  height: number;
-  originalWidth: number;
-  originalHeight: number;
-  resized: boolean;
-} {
-  if (!enabled || width <= 0 || height <= 0 || maxWidth <= 0 || maxHeight <= 0) {
-    return {
-      width,
-      height,
-      originalWidth: width,
-      originalHeight: height,
-      resized: false,
-    };
-  }
-
-  const scale = Math.min(1, maxWidth / width, maxHeight / height);
-  const resizedWidth = Math.max(1, Math.round(width * scale));
-  const resizedHeight = Math.max(1, Math.round(height * scale));
-
-  return {
-    width: resizedWidth,
-    height: resizedHeight,
-    originalWidth: width,
-    originalHeight: height,
-    resized: resizedWidth !== width || resizedHeight !== height,
-  };
 }
 
 function triggerBlobDownload(blob: Blob, fileName: string): void {

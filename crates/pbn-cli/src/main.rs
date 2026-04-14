@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgb, Rgba};
 use pbn_core::logger::as_tracing_level;
-use pbn_core::models::{LogLevel, ProcessInput, ProcessSettings};
+use pbn_core::models::{LogLevel, ProcessInput, ProcessSettings, ResizeSettings};
 use pbn_core::process_rgba;
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::{Options, Tree};
@@ -16,37 +17,52 @@ use tracing_subscriber::EnvFilter;
 
 /// 原生 CLI 参数。
 #[derive(Debug, Parser)]
-#[command(name = "paintbynumbers")]
-#[command(about = "将输入图片转换为可调试的数字填色输出")]
+#[command(name = "pbn-cli")]
+#[command(bin_name = "pbn-cli")]
+#[command(display_name = "pbn-cli")]
+#[command(version)]
+#[command(about = "High-performance Paint-By-Numbers generator (Native Rust version)")]
 struct Cli {
     /// Input image path.
     #[arg(short = 'i', long = "input")]
     input: PathBuf,
-    /// Output base path. If a directory is provided, output will be saved as result.* within that directory.
+    /// Output directory or base path.
     #[arg(short = 'o', long = "output")]
     output: PathBuf,
     /// JSON configuration file path.
     #[arg(short = 'c', long = "config")]
     config: Option<PathBuf>,
-    /// Output format(s), separate multiple formats with commas.
-    #[arg(long = "format", default_value = "svg,palette.json,quantized.png")]
+    /// Output formats (comma separated: svg, palette.json, quantized.png, png).
+    #[arg(long = "format", default_value = "svg,palette.json,quantized.png,png")]
     format: String,
-    /// Number of colors to quantize.
+    /// Number of colors to quantize (default: 16).
     #[arg(short = 'k', long = "kmeans-clusters")]
     kmeans_clusters: Option<usize>,
-    /// Minimum facet size in pixels.
+    /// Minimum facet size in pixels (default: 20).
     #[arg(long = "remove-facets-smaller-than")]
     remove_facets_smaller_than: Option<usize>,
-    /// Number of smoothing passes for borders.
+    /// Number of smoothing passes (default: 2).
     #[arg(long = "border-smoothing-passes")]
     border_smoothing_passes: Option<u8>,
-    /// Explicitly specify the log level.
+    /// Disable input image resizing before processing.
+    #[arg(long = "no-resize", action = ArgAction::SetTrue)]
+    no_resize: bool,
+    /// Enable input image resizing before processing.
+    #[arg(long = "resize", action = ArgAction::SetTrue)]
+    resize: bool,
+    /// Maximum input width before downscaling (default: 1024).
+    #[arg(long = "resize-max-width")]
+    resize_max_width: Option<u32>,
+    /// Maximum input height before downscaling (default: 1024).
+    #[arg(long = "resize-max-height")]
+    resize_max_height: Option<u32>,
+    /// Logging level (info, debug, warn, error).
     #[arg(long = "log-level")]
     log_level: Option<String>,
-    /// Quiet mode, prints errors only.
+    /// Suppress non-error output.
     #[arg(long = "quiet", action = ArgAction::SetTrue)]
     quiet: bool,
-    /// Verbose mode, equivalent to enabling debug logging.
+    /// Enable debug logging.
     #[arg(long = "verbose", action = ArgAction::SetTrue)]
     verbose: bool,
 }
@@ -56,8 +72,11 @@ struct CliProfile<'a> {
     input: String,
     output: String,
     requested_formats: Vec<&'a str>,
+    original_width: u32,
+    original_height: u32,
     width: u32,
     height: u32,
+    resized: bool,
     palette_size: usize,
     facet_count: usize,
     svg_bytes: usize,
@@ -88,6 +107,18 @@ fn main() -> Result<()> {
     if let Some(b) = cli.border_smoothing_passes {
         settings.border_smoothing_passes = b;
     }
+    if cli.resize || cli.resize_max_width.is_some() || cli.resize_max_height.is_some() {
+        settings.resize.enabled = true;
+    }
+    if cli.no_resize {
+        settings.resize.enabled = false;
+    }
+    if let Some(width) = cli.resize_max_width {
+        settings.resize.max_width = width;
+    }
+    if let Some(height) = cli.resize_max_height {
+        settings.resize.max_height = height;
+    }
 
     install_logger(settings.log_level)?;
 
@@ -102,12 +133,16 @@ fn main() -> Result<()> {
 
     let image = image::open(&cli.input)
         .with_context(|| format!("无法打开输入图片: {}", cli.input.display()))?;
-    let (width, height, rgba) = image_to_rgba(image);
+    let (original_width, original_height, width, height, resized, rgba) =
+        image_to_rgba_with_resize(image, &settings.resize);
 
     info!(
         target: "pbn_cli",
+        original_width,
+        original_height,
         width,
         height,
+        resized,
         rgba_len = rgba.len(),
         "Input image decoded"
     );
@@ -183,8 +218,11 @@ fn main() -> Result<()> {
                     input: cli.input.display().to_string(),
                     output: cli.output.display().to_string(),
                     requested_formats: formats.clone(),
+                    original_width,
+                    original_height,
                     width,
                     height,
+                    resized,
                     palette_size: output.palette.len(),
                     facet_count: output.facet_count,
                     svg_bytes: output.svg.len(),
@@ -272,6 +310,10 @@ fn load_settings(path: Option<&Path>) -> Result<ProcessSettings> {
         rename_field(object, "showLabels", "show_labels");
         rename_field(object, "showBorders", "show_borders");
         rename_field(object, "fillFacets", "fill_facets");
+        if let Some(resize) = object.get_mut("resize").and_then(Value::as_object_mut) {
+            rename_field(resize, "maxWidth", "max_width");
+            rename_field(resize, "maxHeight", "max_height");
+        }
     }
 
     Ok(serde_json::from_value(value)?)
@@ -306,10 +348,44 @@ fn install_logger(level: LogLevel) -> Result<()> {
     Ok(())
 }
 
-fn image_to_rgba(image: DynamicImage) -> (u32, u32, Vec<u8>) {
-    let rgba = image.to_rgba8();
+fn image_to_rgba_with_resize(
+    image: DynamicImage,
+    resize: &ResizeSettings,
+) -> (u32, u32, u32, u32, bool, Vec<u8>) {
     let (width, height) = image.dimensions();
-    (width, height, rgba.into_raw())
+    let (target_width, target_height, resized) = resolve_resize_dimensions(width, height, resize);
+    let rgba = if resized {
+        image
+            .resize_exact(target_width, target_height, FilterType::Lanczos3)
+            .to_rgba8()
+    } else {
+        image.to_rgba8()
+    };
+    (
+        width,
+        height,
+        target_width,
+        target_height,
+        resized,
+        rgba.into_raw(),
+    )
+}
+
+fn resolve_resize_dimensions(width: u32, height: u32, resize: &ResizeSettings) -> (u32, u32, bool) {
+    if !resize.enabled || width == 0 || height == 0 || resize.max_width == 0 || resize.max_height == 0 {
+        return (width, height, false);
+    }
+
+    let scale = 1.0f64.min(
+        (resize.max_width as f64 / width as f64).min(resize.max_height as f64 / height as f64),
+    );
+    let resized_width = ((width as f64) * scale).round().max(1.0) as u32;
+    let resized_height = ((height as f64) * scale).round().max(1.0) as u32;
+    (
+        resized_width,
+        resized_height,
+        resized_width != width || resized_height != height,
+    )
 }
 
 fn ensure_rendered_preview<'a>(
@@ -363,4 +439,50 @@ fn write_rgba_jpeg(width: u32, height: u32, rgba: &[u8], path: &Path, quality: u
         .with_context(|| format!("无法编码 JPEG 图像: {}", path.display()))?;
     fs::write(path, bytes).with_context(|| format!("无法保存 JPG 输出图像: {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_resize_dimensions;
+    use pbn_core::models::ResizeSettings;
+
+    #[test]
+    fn resize_dimensions_keep_smaller_input() {
+        let resize = ResizeSettings {
+            enabled: false,
+            max_width: 1024,
+            max_height: 1024,
+        };
+        assert_eq!(resolve_resize_dimensions(640, 480, &resize), (640, 480, false));
+    }
+
+    #[test]
+    fn resize_dimensions_scale_large_input_proportionally_when_enabled() {
+        let resize = ResizeSettings {
+            enabled: true,
+            max_width: 1024,
+            max_height: 1024,
+        };
+        assert_eq!(resolve_resize_dimensions(4000, 3000, &resize), (1024, 768, true));
+    }
+
+    #[test]
+    fn resize_dimensions_default_disabled_behavior_keeps_original_size() {
+        let resize = ResizeSettings {
+            enabled: false,
+            max_width: 1024,
+            max_height: 1024,
+        };
+        assert_eq!(resolve_resize_dimensions(4000, 3000, &resize), (4000, 3000, false));
+    }
+
+    #[test]
+    fn resize_dimensions_can_be_enabled() {
+        let resize = ResizeSettings {
+            enabled: true,
+            max_width: 1024,
+            max_height: 1024,
+        };
+        assert_eq!(resolve_resize_dimensions(4000, 3000, &resize), (1024, 768, true));
+    }
 }

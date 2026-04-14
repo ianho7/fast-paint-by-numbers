@@ -29,7 +29,7 @@ export function buildRustSettings(options: import("./types.js").GenerateOptions 
     maximum_number_of_facets: options.maximumNumberOfFacets ?? 4294967295,
     border_smoothing_passes: options.borderSmoothingPasses ?? 2,
     resize: {
-      enabled: options.resize?.enabled ?? true,
+      enabled: options.resize?.enabled ?? false,
       max_width: options.resize?.maxWidth ?? 1024,
       max_height: options.resize?.maxHeight ?? 1024
     },

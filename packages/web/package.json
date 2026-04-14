@@ -1,22 +1,22 @@
 {
   "name": "web",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "devDependencies": {
+    "typescript": "~6.0.2",
+    "vite": "^8.0.4"
+  },
+  "private": true,
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "type-check": "tsc --noEmit",
     "preview": "vite preview"
   },
-  "devDependencies": {
-    "typescript": "~6.0.2",
-    "vite": "^8.0.4"
-  },
+  "type": "module",
   "volta": {
     "node": "24.14.1"
   },
   "dependencies": {
-    "fast-paint-by-numbers": "file:../sdk"
+    "fast-paint-by-numbers": "^0.1.5"
   }
 }

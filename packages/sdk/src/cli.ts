@@ -5,11 +5,12 @@ import chalk from "chalk";
 import sharp from "sharp";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
-import { 
-  initializeWasmRuntime, 
-  generatePaintByNumbers, 
+import {
+  initializeWasmRuntime,
+  generatePaintByNumbers,
   prepareRgbaInput,
-  createConsoleLogger
+  createConsoleLogger,
+  resolveResizeDimensions
 } from "./index.js";
 import type { GenerateOptions } from "./types.js";
 
@@ -21,14 +22,18 @@ async function main() {
   program
     .name("fast-pbn")
     .description("High-performance Paint-By-Numbers generator (Node.js/Wasm version)")
-    .version("0.1.0")
+    .version("0.1.5")
     .requiredOption("-i, --input <path>", "Input image path")
     .requiredOption("-o, --output <path>", "Output directory or base path")
     .option("-c, --config <path>", "JSON configuration file path")
     .option("-k, --kmeans-clusters <number>", "Number of colors to quantize (default: 16)", "16")
     .option("--remove-facets-smaller-than <number>", "Minimum facet size in pixels (default: 20)", "20")
     .option("--border-smoothing-passes <number>", "Number of smoothing passes (default: 2)", "2")
-    .option("--format <string>", "Output formats (comma separated: svg, palette.json, quantized.png)", "svg,palette.json,quantized.png")
+    .option("--format <string>", "Output formats (comma separated: svg, palette.json, quantized.png, png)", "svg,palette.json,quantized.png,png")
+    .option("--resize", "Enable input image resizing before processing")
+    .option("--no-resize", "Disable input image resizing before processing")
+    .option("--resize-max-width <number>", "Maximum input width before downscaling (default: 1024)")
+    .option("--resize-max-height <number>", "Maximum input height before downscaling (default: 1024)")
     .option("--log-level <level>", "Logging level (info, debug, warn, error)", "info")
     .option("--quiet", "Suppress non-error output")
     .option("--verbose", "Enable debug logging")
@@ -54,39 +59,66 @@ async function main() {
       }
     }
 
-    // 3. Read Image
-    logger.info(`Reading input image: ${options.input}`);
-    const image = sharp(options.input);
-    const { data: rgba, info } = await image
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const resizeEnabled = options.noResize
+      ? false
+      : (options.resize || options.resizeMaxWidth !== undefined || options.resizeMaxHeight !== undefined)
+        ? true
+        : (config.resize?.enabled ?? false);
 
-    logger.info(`Image decoded: ${info.width}x${info.height}`);
-
-    // 4. Generate
-    const input = prepareRgbaInput(info.width, info.height, rgba);
-    const result = await generatePaintByNumbers(input, {
+    const generateOptions: GenerateOptions = {
       ...config,
       kmeansClusters: parseInt(options.kmeansClusters),
       removeFacetsSmallerThan: parseInt(options.removeFacetsSmallerThan),
       borderSmoothingPasses: parseInt(options.borderSmoothingPasses),
-      logLevel
-    });
+      logLevel,
+      resize: {
+        enabled: resizeEnabled,
+        maxWidth: options.resizeMaxWidth ? parseInt(options.resizeMaxWidth) : (config.resize?.maxWidth ?? 1024),
+        maxHeight: options.resizeMaxHeight ? parseInt(options.resizeMaxHeight) : (config.resize?.maxHeight ?? 1024)
+      }
+    };
+
+    // 3. Read Image
+    logger.info(`Reading input image: ${options.input}`);
+    const image = sharp(options.input);
+    const metadata = await image.metadata();
+    if (!metadata.width || !metadata.height) {
+      throw new Error(`Unable to determine input image size: ${options.input}`);
+    }
+    const targetSize = resolveResizeDimensions(metadata.width, metadata.height, generateOptions.resize);
+    const pipeline = sharp(options.input);
+    if (targetSize.resized) {
+      pipeline.resize(targetSize.width, targetSize.height, {
+        fit: "fill",
+        kernel: sharp.kernel.lanczos3
+      });
+    }
+    const { data: rgba, info } = await pipeline
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    logger.info(
+      `Image decoded: ${targetSize.originalWidth}x${targetSize.originalHeight} -> ${info.width}x${info.height} (resized=${targetSize.resized})`
+    );
+
+    // 4. Generate
+    const input = prepareRgbaInput(info.width, info.height, rgba);
+    const result = await generatePaintByNumbers(input, generateOptions);
 
     // 5. Save Outputs
     const outBase = options.output;
     await fs.ensureDir(path.isAbsolute(outBase) ? path.dirname(outBase) : path.dirname(path.resolve(process.cwd(), outBase)));
-    
+
     // Determine stem and dir
     let outDir = outBase;
     let outStem = "result";
-    
+
     if (!(await fs.pathExists(outBase)) || (await fs.stat(outBase)).isDirectory()) {
-       await fs.ensureDir(outBase);
+      await fs.ensureDir(outBase);
     } else {
-       outDir = path.dirname(outBase);
-       outStem = path.basename(outBase, path.extname(outBase));
+      outDir = path.dirname(outBase);
+      outStem = path.basename(outBase, path.extname(outBase));
     }
 
     const formats = options.format.split(",").map((f: string) => f.trim().toLowerCase());
@@ -105,12 +137,12 @@ async function main() {
         // but currently our Wasm only returns SVG and metadata.
         // So we render the SVG using sharp.
         const outPath = path.join(outDir, `${outStem}.${format === "quantized.png" ? "quantized.png" : format}`);
-        
+
         // Render SVG to Buffer
         const rendered = await sharp(Buffer.from(result.svg))
           .png() // default to png if quantized.png
           .toBuffer();
-        
+
         await fs.writeFile(outPath, rendered);
         logger.info(`${chalk.green("✔")} Saved raster: ${outPath}`);
       }
